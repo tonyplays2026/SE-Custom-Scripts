@@ -163,8 +163,7 @@ private void StartSequence(string name)
     _state = new SequenceState
     {
         SequenceName = name,
-        StepIndex = 0,
-        LastMoveTime = _elapsed
+        StepIndex = 0
     };
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
     SaveState();
@@ -207,8 +206,7 @@ private void LoadState()
             _state = new SequenceState
             {
                 SequenceName = values[0],
-                StepIndex = int.Parse(values[1]),
-                LastMoveTime = _elapsed
+                StepIndex = int.Parse(values[1])
             };
 
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -249,7 +247,7 @@ private void ProcessSequence()
         if (_state.StepIndex < sequence.Count) MoveTo(sequence[_state.StepIndex]);
         SaveState();
     }
-    else if (_elapsed - _state.LastMoveTime > MOVE_TIMEOUT_SECONDS)
+    else if (_elapsed > MOVE_TIMEOUT_SECONDS)
     {
         PrintMessage($"WARNING: Timeout while attempting to move to {position}. Stopping sequence.");
         StopSequence();
@@ -329,7 +327,7 @@ private void MoveTo(string location)
         }
     }
 
-    _state.LastMoveTime = _elapsed;
+    _elapsed = 0.0;
 }
 
 private bool IsPositionReached(string location)
@@ -444,5 +442,4 @@ private struct SequenceState
 {
     public string SequenceName { get; set; }
     public int StepIndex { get; set; }
-    public double LastMoveTime { get; set; }
 }
