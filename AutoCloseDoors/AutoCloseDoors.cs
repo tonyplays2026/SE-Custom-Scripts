@@ -17,10 +17,13 @@ struct DoorEntry
 Queue<DoorEntry> _queue = new Queue<DoorEntry>();
 HashSet<long> _tracked = new HashSet<long>();
 double _elapsed = 0.0;
+IMyTextSurface _display;
 
 public Program()
 {
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
+    _display = Me.GetSurface(0);
+    _display.ContentType = ContentType.TEXT_AND_IMAGE;
 }
 
 public void Save() { }
@@ -46,7 +49,9 @@ public void Main(string argument, UpdateType updateSource)
     IMyBlockGroup group = GridTerminalSystem.GetBlockGroupWithName(GROUP_NAME);
     if (group == null)
     {
-        Echo("Group not found: " + GROUP_NAME);
+        string error = "Group not found: " + GROUP_NAME;
+        Echo(error);
+        _display.WriteText(error);
         return;
     }
 
@@ -63,5 +68,20 @@ public void Main(string argument, UpdateType updateSource)
         }
     }
 
-    Echo("Tracking: " + _queue.Count + " door(s)");
+    // Update display with currently open doors
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine("=== Auto Close Doors ===");
+    if (_queue.Count == 0)
+    {
+        sb.AppendLine("All doors closed.");
+    }
+    else
+    {
+        foreach (DoorEntry entry in _queue)
+            sb.AppendLine(entry.Door.CustomName);
+    }
+
+    string output = sb.ToString();
+    Echo(output);
+    _display.WriteText(output);
 }
