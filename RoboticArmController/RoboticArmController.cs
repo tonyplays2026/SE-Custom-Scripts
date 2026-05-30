@@ -1,23 +1,28 @@
 private const float TOLERANCE = 0.05f;
 private const double MOVE_TIMEOUT_SECONDS = 60.0;
 
-private bool DEBUG_MODE = true;
+private bool DEBUG_MODE = false;
 private Dictionary<string, List<BlockConfig>> _positions;
 private Dictionary<string, List<string>> _sequences;
 private SequenceState _state;
+private double _elapsed = 0.0;
 
 public Program()
 {
     Runtime.UpdateFrequency = UpdateFrequency.Once;
+    // CustomData changes require a recompile to take effect
+    LoadConfig(Me.CustomData);
     LoadState();
 }
 
+public void Save() { }
+
 public void Main(string argument, UpdateType updateSource)
 {
-    try
-    {                
-        LoadConfig(Me.CustomData);
+    _elapsed += Runtime.TimeSinceLastRun.TotalSeconds;
 
+    try
+    {
         string arg = (argument ?? "").Trim();
 
         if (string.IsNullOrWhiteSpace(arg))
@@ -35,13 +40,13 @@ public void Main(string argument, UpdateType updateSource)
         }
         else if (_positions.ContainsKey(arg))
         {
-            MoveTo(arg);                
+            MoveTo(arg);
         }
         else
         {
             PrintMessage("Unknown location: " + arg);
             PrintMessage("Available: " + string.Join(", ", _positions.Keys));
-        }                    
+        }
 
         if ((updateSource & UpdateType.Update100) != 0)
         {
@@ -58,7 +63,7 @@ private void LoadConfig(string data)
 {
     _positions = new Dictionary<string, List<BlockConfig>>();
     _sequences = new Dictionary<string, List<string>>();
-    
+
     string currentSection = null;
 
     foreach (var line in data.Replace("\r", "").Split(new char[] {'\n'}, StringSplitOptions.RemoveEmptyEntries))
@@ -72,15 +77,16 @@ private void LoadConfig(string data)
             if (trimmed.EndsWith("]"))
             {
                 currentSection = trimmed.Substring(1, trimmed.Length - 2).Trim();
-                if (String.Compare(currentSection, "sequences", StringComparison.InvariantCultureIgnoreCase) == 0)
+                if (String.Compare(currentSection, "sequences", StringComparison.InvariantCultureIgnoreCase) == 0 ||
+                    String.Compare(currentSection, "settings", StringComparison.InvariantCultureIgnoreCase) == 0)
                 {
-                    // Do nothing, just leave the current section as is.  Processing happens below.
+                    // Special sections; no position list needed
                 }
                 else
                 {
                     if (!_positions.ContainsKey(currentSection)) _positions[currentSection] = new List<BlockConfig>();
                 }
-                
+
                 continue;
             }
             else
@@ -91,10 +97,16 @@ private void LoadConfig(string data)
 
         if (currentSection == null) throw new InvalidOperationException("Configuration in CustomData is not defined properly. Missing section header.");
 
-        if (String.Compare(currentSection, "sequences", StringComparison.InvariantCultureIgnoreCase) == 0)
+        if (String.Compare(currentSection, "settings", StringComparison.InvariantCultureIgnoreCase) == 0)
+        {
+            var setting = trimmed.Split(new char[] {'='}, StringSplitOptions.RemoveEmptyEntries);
+            if (setting.Length >= 2 && String.Compare(setting[0].Trim(), "debug", StringComparison.InvariantCultureIgnoreCase) == 0)
+                DEBUG_MODE = GetBoolValue(setting[1].Trim());
+        }
+        else if (String.Compare(currentSection, "sequences", StringComparison.InvariantCultureIgnoreCase) == 0)
         {
             var sequenceDefinition = trimmed.Split(new char[] {'='}, StringSplitOptions.RemoveEmptyEntries);
-            
+
             if (sequenceDefinition.Length != 2) throw new InvalidOperationException("Sequence Defitions are invalid.");
 
             if (!_sequences.ContainsKey(sequenceDefinition[0]))
@@ -110,7 +122,7 @@ private void LoadConfig(string data)
         {
             var blockDefinition = trimmed.Split(new char[] {':'}, StringSplitOptions.RemoveEmptyEntries);
 
-            if (blockDefinition.Length < 2) 
+            if (blockDefinition.Length < 2)
             {
                 throw new InvalidOperationException("Configuration in CustomData is not defined properly.  Missing info for block definition.");
             }
@@ -140,10 +152,8 @@ private void LoadConfig(string data)
                         break;
                 }
             }
-        }                
+        }
     }
-
-    return;
 }
 
 private void StartSequence(string name)
@@ -154,7 +164,7 @@ private void StartSequence(string name)
     {
         SequenceName = name,
         StepIndex = 0,
-        LastMoveTime = Runtime.LastRunTimeMs
+        LastMoveTime = _elapsed
     };
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
     SaveState();
@@ -167,7 +177,7 @@ private void StopSequence()
     _state = new SequenceState
     {
         SequenceName = "-",
-        StepIndex = -1  
+        StepIndex = -1
     };
     Runtime.UpdateFrequency = UpdateFrequency.None;
     SaveState();
@@ -187,10 +197,10 @@ private void LoadState()
             SequenceName = "-",
             StepIndex = -1,
         };
-    } 
+    }
     else
     {
-        var values = Storage.Split(new char[] {'|'},  StringSplitOptions.RemoveEmptyEntries);
+        var values = Storage.Split(new char[] {'|'}, StringSplitOptions.RemoveEmptyEntries);
 
         if (values.Length == 2)
         {
@@ -198,6 +208,7 @@ private void LoadState()
             {
                 SequenceName = values[0],
                 StepIndex = int.Parse(values[1]),
+                LastMoveTime = _elapsed
             };
 
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -228,17 +239,17 @@ private void ProcessSequence()
         StopSequence();
         return;
     }
-    
+
     var position = sequence[_state.StepIndex];
 
     if (IsPositionReached(position))
     {
-        PrintMessage($"Step { _state.StepIndex + 1 }/{ sequence.Count } ({ position}) reached.", true);
+        PrintMessage($"Step {_state.StepIndex + 1}/{sequence.Count} ({position}) reached.", true);
         _state.StepIndex++;
         if (_state.StepIndex < sequence.Count) MoveTo(sequence[_state.StepIndex]);
         SaveState();
     }
-    else if ((Runtime.LastRunTimeMs - _state.LastMoveTime) / 1000.0 > MOVE_TIMEOUT_SECONDS)
+    else if (_elapsed - _state.LastMoveTime > MOVE_TIMEOUT_SECONDS)
     {
         PrintMessage($"WARNING: Timeout while attempting to move to {position}. Stopping sequence.");
         StopSequence();
@@ -252,20 +263,20 @@ private void MoveTo(string location)
 
     var blockConfig = _positions[location];
 
-    foreach(var block in blockConfig)
+    foreach (var block in blockConfig)
     {
-        switch(block.Type)
+        switch (block.Type)
         {
             case "Piston":
                 var piston = GridTerminalSystem.GetBlockWithName(block.Name) as IMyPistonBase;
                 if (piston != null)
                 {
                     piston.MoveToPosition(block.Target, block.Velocity);
-                }      
+                }
                 else
                 {
                     PrintMessage($"WARNING: Could not find the piston labeled {block.Name}.");
-                }              
+                }
                 break;
             case "Hinge":
             case "Rotor":
@@ -273,11 +284,11 @@ private void MoveTo(string location)
                 if (stator != null)
                 {
                     stator.RotateToAngle(block.RotationDirection, block.Target, block.Velocity);
-                }     
+                }
                 else
                 {
                     PrintMessage($"WARNING: Could not find the {block.Type} labeled {block.Name}.");
-                } 
+                }
                 break;
             case "Welder":
                 var welder = GridTerminalSystem.GetBlockWithName(block.Name) as IMyShipWelder;
@@ -318,7 +329,7 @@ private void MoveTo(string location)
         }
     }
 
-    _state.LastMoveTime = Runtime.LastRunTimeMs;
+    _state.LastMoveTime = _elapsed;
 }
 
 private bool IsPositionReached(string location)
@@ -332,8 +343,9 @@ private bool IsPositionReached(string location)
         {
             case "Piston":
                 var piston = GridTerminalSystem.GetBlockWithName(block.Name) as IMyPistonBase;
+                if (piston == null) return false;
                 var pistonDifference = Math.Abs(piston.CurrentPosition - block.Target);
-                if (piston == null || pistonDifference > TOLERANCE)
+                if (pistonDifference > TOLERANCE)
                 {
                     PrintMessage($"Piston {block.Name}: {piston.CurrentPosition:F3}m vs {block.Target:F3}m (diff {pistonDifference:F3})", true);
                     return false;
@@ -342,9 +354,8 @@ private bool IsPositionReached(string location)
             case "Hinge":
             case "Rotor":
                 var stator = GridTerminalSystem.GetBlockWithName(block.Name) as IMyMotorStator;
-                if (stator == null)
-                    return false;
-                
+                if (stator == null) return false;
+
                 float currentDegrees = MathHelper.ToDegrees(stator.Angle);
                 float difference = Math.Abs(currentDegrees - block.Target);
 
@@ -359,7 +370,7 @@ private bool IsPositionReached(string location)
             case "Welder":
                 var welder = GridTerminalSystem.GetBlockWithName(block.Name) as IMyShipWelder;
                 if (welder != null && block.ShouldEnable != welder.Enabled)
-                {                            
+                {
                     PrintMessage($"{block.Type} {block.Name}: {welder.Enabled} vs {block.ShouldEnable}", true);
                     return false;
                 }
@@ -367,7 +378,7 @@ private bool IsPositionReached(string location)
             case "Projector":
                 var projector = GridTerminalSystem.GetBlockWithName(block.Name) as IMyProjector;
                 if (projector != null && block.ShouldEnable != projector.Enabled)
-                {                            
+                {
                     PrintMessage($"{block.Type} {block.Name}: {projector.Enabled} vs {block.ShouldEnable}", true);
                     return false;
                 }
@@ -375,7 +386,7 @@ private bool IsPositionReached(string location)
             case "Light":
                 var light = GridTerminalSystem.GetBlockWithName(block.Name) as IMyReflectorLight;
                 if (light != null && block.ShouldEnable != light.Enabled)
-                {                            
+                {
                     PrintMessage($"{block.Type} {block.Name}: {light.Enabled} vs {block.ShouldEnable}", true);
                     return false;
                 }
@@ -388,9 +399,7 @@ private bool IsPositionReached(string location)
 private float GetFloatValue(string input)
 {
     float value;
-
     float.TryParse(input, out value);
-
     return value;
 }
 
@@ -398,8 +407,7 @@ private MyRotationDirection GetRotationDirection(string[] blockDefinition)
 {
     MyRotationDirection direction;
     if (blockDefinition.Length == 5 && Enum.TryParse(blockDefinition[4], out direction)) return direction;
-
-    return MyRotationDirection.AUTO;            
+    return MyRotationDirection.AUTO;
 }
 
 private bool GetBoolValue(string input)
