@@ -40,6 +40,8 @@ public void Main(string argument, UpdateType updateSource)
             entry.Door.CloseDoor();
     }
 
+    if (_queue.Count == 0) _elapsed = 0.0;
+
     // Enqueue any newly opened doors
     IMyBlockGroup group = GridTerminalSystem.GetBlockGroupWithName(GROUP_NAME);
     if (group == null)
