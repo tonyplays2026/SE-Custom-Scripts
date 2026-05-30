@@ -6,6 +6,7 @@ private Dictionary<string, List<BlockConfig>> _positions;
 private Dictionary<string, List<string>> _sequences;
 private SequenceState _state;
 private double _elapsed = 0.0;
+private Dictionary<string, IMyTerminalBlock> _blockCache = new Dictionary<string, IMyTerminalBlock>();
 
 public Program()
 {
@@ -91,11 +92,12 @@ private void LoadConfig(string data)
             }
             else
             {
-                throw new InvalidOperationException("Section header in CustomData is not defined properly.");
+                Echo($"CONFIG ERROR: Malformed section header: {trimmed}");
+                continue;
             }
         }
 
-        if (currentSection == null) throw new InvalidOperationException("Configuration in CustomData is not defined properly. Missing section header.");
+        if (currentSection == null) { Echo($"CONFIG ERROR: Entry has no section header: {trimmed}"); continue; }
 
         if (String.Compare(currentSection, "settings", StringComparison.InvariantCultureIgnoreCase) == 0)
         {
@@ -107,7 +109,7 @@ private void LoadConfig(string data)
         {
             var sequenceDefinition = trimmed.Split(new char[] {'='}, StringSplitOptions.RemoveEmptyEntries);
 
-            if (sequenceDefinition.Length != 2) throw new InvalidOperationException("Sequence Defitions are invalid.");
+            if (sequenceDefinition.Length != 2) { Echo($"CONFIG ERROR: Invalid sequence definition: {trimmed}"); continue; }
 
             if (!_sequences.ContainsKey(sequenceDefinition[0]))
             {
@@ -124,7 +126,8 @@ private void LoadConfig(string data)
 
             if (blockDefinition.Length < 2)
             {
-                throw new InvalidOperationException("Configuration in CustomData is not defined properly.  Missing info for block definition.");
+                Echo($"CONFIG ERROR: Incomplete block definition: {trimmed}");
+                continue;
             }
             else
             {
@@ -133,6 +136,7 @@ private void LoadConfig(string data)
                     case "Welder":
                     case "Projector":
                     case "Light":
+                        if (blockDefinition.Length < 3) { Echo($"CONFIG ERROR: Missing enable field for {blockDefinition[1]}: {trimmed}"); continue; }
                         _positions[currentSection].Add(new BlockConfig
                         {
                             Name = blockDefinition[0],
@@ -141,6 +145,7 @@ private void LoadConfig(string data)
                         });
                         break;
                     default:
+                        if (blockDefinition.Length < 4) { Echo($"CONFIG ERROR: Missing fields for {blockDefinition[1]}: {trimmed}"); continue; }
                         _positions[currentSection].Add(new BlockConfig
                         {
                             Name = blockDefinition[0],
@@ -210,6 +215,13 @@ private void LoadState()
             };
 
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
+
+            if (_state.SequenceName != "-" && _state.StepIndex >= 0 &&
+                _sequences.ContainsKey(_state.SequenceName) &&
+                _state.StepIndex < _sequences[_state.SequenceName].Count)
+            {
+                MoveTo(_sequences[_state.SequenceName][_state.StepIndex]);
+            }
         }
     }
 }
@@ -266,7 +278,7 @@ private void MoveTo(string location)
         switch (block.Type)
         {
             case "Piston":
-                var piston = GridTerminalSystem.GetBlockWithName(block.Name) as IMyPistonBase;
+                var piston = GetBlock<IMyPistonBase>(block.Name);
                 if (piston != null)
                 {
                     piston.MoveToPosition(block.Target, block.Velocity);
@@ -278,7 +290,7 @@ private void MoveTo(string location)
                 break;
             case "Hinge":
             case "Rotor":
-                var stator = GridTerminalSystem.GetBlockWithName(block.Name) as IMyMotorStator;
+                var stator = GetBlock<IMyMotorStator>(block.Name);
                 if (stator != null)
                 {
                     stator.RotateToAngle(block.RotationDirection, block.Target, block.Velocity);
@@ -289,7 +301,7 @@ private void MoveTo(string location)
                 }
                 break;
             case "Welder":
-                var welder = GridTerminalSystem.GetBlockWithName(block.Name) as IMyShipWelder;
+                var welder = GetBlock<IMyShipWelder>(block.Name);
                 if (welder != null)
                 {
                     welder.Enabled = block.ShouldEnable;
@@ -300,7 +312,7 @@ private void MoveTo(string location)
                 }
                 break;
             case "Projector":
-                var projector = GridTerminalSystem.GetBlockWithName(block.Name) as IMyProjector;
+                var projector = GetBlock<IMyProjector>(block.Name);
                 if (projector != null)
                 {
                     projector.Enabled = block.ShouldEnable;
@@ -311,7 +323,7 @@ private void MoveTo(string location)
                 }
                 break;
             case "Light":
-                var light = GridTerminalSystem.GetBlockWithName(block.Name) as IMyReflectorLight;
+                var light = GetBlock<IMyReflectorLight>(block.Name);
                 if (light != null)
                 {
                     light.Enabled = block.ShouldEnable;
@@ -340,7 +352,7 @@ private bool IsPositionReached(string location)
         switch (block.Type)
         {
             case "Piston":
-                var piston = GridTerminalSystem.GetBlockWithName(block.Name) as IMyPistonBase;
+                var piston = GetBlock<IMyPistonBase>(block.Name);
                 if (piston == null) return false;
                 var pistonDifference = Math.Abs(piston.CurrentPosition - block.Target);
                 if (pistonDifference > TOLERANCE)
@@ -351,7 +363,7 @@ private bool IsPositionReached(string location)
                 break;
             case "Hinge":
             case "Rotor":
-                var stator = GridTerminalSystem.GetBlockWithName(block.Name) as IMyMotorStator;
+                var stator = GetBlock<IMyMotorStator>(block.Name);
                 if (stator == null) return false;
 
                 float currentDegrees = MathHelper.ToDegrees(stator.Angle);
@@ -366,7 +378,7 @@ private bool IsPositionReached(string location)
                 }
                 break;
             case "Welder":
-                var welder = GridTerminalSystem.GetBlockWithName(block.Name) as IMyShipWelder;
+                var welder = GetBlock<IMyShipWelder>(block.Name);
                 if (welder != null && block.ShouldEnable != welder.Enabled)
                 {
                     PrintMessage($"{block.Type} {block.Name}: {welder.Enabled} vs {block.ShouldEnable}", true);
@@ -374,7 +386,7 @@ private bool IsPositionReached(string location)
                 }
                 break;
             case "Projector":
-                var projector = GridTerminalSystem.GetBlockWithName(block.Name) as IMyProjector;
+                var projector = GetBlock<IMyProjector>(block.Name);
                 if (projector != null && block.ShouldEnable != projector.Enabled)
                 {
                     PrintMessage($"{block.Type} {block.Name}: {projector.Enabled} vs {block.ShouldEnable}", true);
@@ -382,7 +394,7 @@ private bool IsPositionReached(string location)
                 }
                 break;
             case "Light":
-                var light = GridTerminalSystem.GetBlockWithName(block.Name) as IMyReflectorLight;
+                var light = GetBlock<IMyReflectorLight>(block.Name);
                 if (light != null && block.ShouldEnable != light.Enabled)
                 {
                     PrintMessage($"{block.Type} {block.Name}: {light.Enabled} vs {block.ShouldEnable}", true);
@@ -413,6 +425,17 @@ private bool GetBoolValue(string input)
     bool value;
     bool.TryParse(input, out value);
     return value;
+}
+
+private T GetBlock<T>(string name) where T : class
+{
+    IMyTerminalBlock cached;
+    if (!_blockCache.TryGetValue(name, out cached))
+    {
+        cached = GridTerminalSystem.GetBlockWithName(name);
+        if (cached != null) _blockCache[name] = cached;
+    }
+    return cached as T;
 }
 
 private void PrintMessage(string message, bool isDebugMessage = false)

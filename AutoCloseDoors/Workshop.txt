@@ -1,0 +1,35 @@
+[h1]Auto Close Doors[/h1]
+Automatically closes any door in a designated block group after a configurable delay. Useful for door that should not stay open unattended.
+
+[h2]Setup[/h2]
+[list]
+[*]Create a block group and name it [b]Auto Close Doors[/b] (name is configurable — see below).
+[*]Add every door you want auto-closed to that group.
+[*]Paste the script into a Programmable Block and click [b]Check Code[/b].
+[/list]
+No Custom Data or timer blocks are required. The script runs automatically.
+
+[h2]Configuration[/h2]
+All settings are at the top of the script. Edit them before pasting.
+
+[code]
+string GROUP_NAME = "Auto Close Doors";  // Block group to monitor
+double CLOSE_DELAY = 3.0;               // Seconds a door stays open before being closed
+double DOOR_CACHE_REFRESH = 30.0;       // How often (seconds) to re-scan the group for new doors
+[/code]
+
+[h2]Status Display[/h2]
+The Programmable Block's built-in LCD surface (surface 0) shows live status:
+[list]
+[*][b]All doors closed[/b] — nothing pending.
+[*]A list of open door names — doors currently waiting to be auto-closed.
+[*]An error message if the configured group is not found.
+[/list]
+
+[h2]Notes[/h2]
+[list]
+[*]Runs automatically at ~0.6 Hz (every 100 ticks). No arguments, timers, or sensors needed.
+[*]Doors are only closed if they are [i]functional[/i] — powered and undamaged.
+[*]Adding or removing doors from the group takes effect within the next cache refresh interval.
+[*]If a door is manually held open by a player or sensor it will be closed once the player clears — the script only checks door status, not occupancy.
+[/list]

@@ -1,0 +1,64 @@
+[h1]Robotic Arm Controller[/h1]
+Controls sequences of pistons, rotors, and hinges — plus optional welders, projectors, and spotlights — via named positions and automated sequences. Designed for multi-step robotic arm routines that need to run unattended and survive world reloads mid-sequence.
+
+[h2]Setup[/h2]
+[list]
+[*]Paste the script into a Programmable Block and click [b]Check Code[/b].
+[*]Define your positions and sequences in the block's [b]Custom Data[/b] (format below).
+[*]Recompile after any Custom Data changes.
+[/list]
+
+[h2]Custom Data Format[/h2]
+[code]
+[settings]
+debug=false
+
+[home]
+Piston Base:Piston:0.0:0.5
+Main Rotor:Rotor:0.0:5.0
+Arm Hinge:Hinge:90.0:5.0
+
+[extended]
+Piston Base:Piston:5.0:0.5
+Main Rotor:Rotor:45.0:5.0
+Arm Hinge:Hinge:45.0:5.0
+Welder 1:Welder:true
+
+[sequences]
+deploy=home:extended
+retract=extended:home
+[/code]
+
+[b]Section headers[/b] (e.g. [code][home][/code]) define named positions. The special sections [code][settings][/code] and [code][sequences][/code] are reserved.
+
+[b]Block definition format per line:[/b]
+[list]
+[*][b]Piston[/b] — [code]BlockName:Piston:TargetMeters:SpeedM/s[/code]
+[*][b]Rotor / Hinge[/b] — [code]BlockName:Rotor:TargetDegrees:SpeedRPM[/code] (optional 5th field: [code]CW[/code], [code]CCW[/code], or [code]AUTO[/code])
+[*][b]Welder / Projector / Light[/b] — [code]BlockName:Welder:true[/code] or [code]BlockName:Welder:false[/code]
+[/list]
+Block names must exactly match the in-game names. Lines starting with [code]#[/code] are treated as comments.
+
+[b]Sequence definition format:[/b]
+[code]SequenceName=position1:position2:position3[/code]
+Each step waits for all blocks in that position to reach their targets before advancing to the next step.
+
+[h2]Commands[/h2]
+Pass these as the Programmable Block argument — via the run button, a timer block, or a button panel:
+[list]
+[*][b]sequence deploy[/b] — run the sequence named [i]deploy[/i]
+[*][b]home[/b] — move directly to the position named [i]home[/i] (no sequence logic)
+[*][b]stop[/b] — halt and clear the active sequence
+[*](no argument) — print a config summary (position and sequence counts) to the detail panel
+[/list]
+
+[h2]Reload and Recompile Behavior[/h2]
+The active sequence and current step are saved automatically. On world reload or PB recompile the script resumes exactly where it left off, resending move commands to all blocks in the current step.
+
+[h2]Notes[/h2]
+[list]
+[*]A step times out after [b]60 seconds[/b] if the target position is never reached. The sequence stops and a warning is printed. The timeout is configurable via [code]MOVE_TIMEOUT_SECONDS[/code] at the top of the script.
+[*]Position tolerance is [b]0.05[/b] (metres for pistons, degrees for rotors/hinges). Configurable via [code]TOLERANCE[/code].
+[*]Config errors are printed to the detail panel line by line — a bad line is skipped, not the entire config.
+[*]Enable [code]debug=true[/code] in [code][settings][/code] to print per-block status on every check tick. Disable it for normal operation.
+[/list]
