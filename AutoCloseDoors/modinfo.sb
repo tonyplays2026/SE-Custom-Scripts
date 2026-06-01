@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<MyObjectBuilder_ModInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>Auto Close Doors</Name>
+  <Description>A simple ingame script that will monitor a collection of doors and close them afterr a certain amount of time.</Description>
+  <Thumbnail>thumb.png</Thumbnail>
+
+  <Author>TonyPlays</Author>
+  <SteamIDOwner>0</SteamIDOwner>
+  
+  <WorkshopId>0</WorkshopId>
+  
+  <WorkshopIds>
+    <WorkshopId>
+      <Id>0</Id>
+      <ServiceName>Steam</ServiceName>
+    </WorkshopId>
+  </WorkshopIds>
+  
+  <!-- These help with visibility and compatibility -->
+  <Tags>
+    <string>Ingame Script</string>
+    <string>Automation</string>
+    <string>Utility</string>
+  </Tags>
+  
+  <ModDependencies />
+</MyObjectBuilder_ModInfo>

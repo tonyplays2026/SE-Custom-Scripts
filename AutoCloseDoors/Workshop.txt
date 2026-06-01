@@ -10,7 +10,7 @@ Automatically closes any door in a designated block group after a configurable d
 No Custom Data or timer blocks are required. The script runs automatically.
 
 [h2]Configuration[/h2]
-All settings are at the top of the script. Edit them before pasting.
+All settings are at the top of the script. Edit them before compiling or running script.
 
 [code]
 string GROUP_NAME = "Auto Close Doors";  // Block group to monitor
@@ -28,7 +28,7 @@ The Programmable Block's built-in LCD surface (surface 0) shows live status:
 
 [h2]Notes[/h2]
 [list]
-[*]Runs automatically at ~0.6 Hz (every 100 ticks). No arguments, timers, or sensors needed.
+[*]Runs automatically every 100 ticks. No arguments, timers, or sensors needed.
 [*]Doors are only closed if they are [i]functional[/i] — powered and undamaged.
 [*]Adding or removing doors from the group takes effect within the next cache refresh interval.
 [*]If a door is manually held open by a player or sensor it will be closed once the player clears — the script only checks door status, not occupancy.
