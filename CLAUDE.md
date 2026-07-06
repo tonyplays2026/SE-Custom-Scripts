@@ -24,3 +24,12 @@ Every script compiles as a single class body extending `MyGridProgram`. No `usin
 
 ## Script Organization
 Each script lives in its own subfolder. The `.cs` file contains the raw script body only — valid to paste directly into a PB.
+
+## Deployment
+Scripts are deployed to the in-game local script browser at:
+
+`C:\Users\cavanhorn\AppData\Roaming\SpaceEngineers\IngameScripts\local\`
+
+Each script gets a folder there whose name matches the script's repo folder name (e.g. `TrackCartController`). Inside that folder the script file must be named **`Script.cs`** — that exact name is what makes it appear in the in-game script browser.
+
+Deploy on every script change: copy the repo's `<Name>/<Name>.cs` to `IngameScripts\local\<Name>\Script.cs`.
