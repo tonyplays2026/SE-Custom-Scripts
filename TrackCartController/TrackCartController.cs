@@ -1,29 +1,7 @@
-// ============================================================================
-// Track Cart Controller
-// Iteration 1 — Cruise speed controller
-//
-// Holds a configurable target speed for a track-guided wheeled cart, driving
-// up grades and braking down grades. Steering is assumed to be handled by the
-// physical track, so this script only manages propulsion and wheel brakes on a
-// defined set of DRIVE wheels (alignment/guide wheels are excluded).
-//
-// Left and right drive wheels require OPPOSITE PropulsionOverride signs (an SE
-// quirk: the override is applied raw and does not auto-account for mirrored
-// placement). The script determines each wheel's side from geometry and signs
-// them automatically.
-//
-// Later iterations add: position-based approach & docking, and automatic
-// destination selection / trip sequencing.
-//
-// USAGE (Programmable Block argument):
-//   start   - begin cruising toward CruiseSpeed
-//   stop    - halt and hold with brakes
-//   reload  - re-read Custom Data config and re-discover blocks
-//   (none)  - print status / setup info
-//
-// Config lives in this block's Custom Data (section [CartController]); a
-// template is written automatically the first time if it is empty.
-// ============================================================================
+// Track Cart Controller — Iteration 1: cruise speed controller.
+// Holds a target speed on a track-guided wheeled cart (steering handled by the
+// track); drives up grades and brakes down grades.
+// Setup, commands, config, and tuning: see workshop.txt.
 
 // ---- Configuration (parsed from Custom Data) -------------------------------
 double _cruiseSpeed = 10.0;               // target travel speed (m/s)
@@ -31,8 +9,8 @@ double _maxSpeed = 15.0;                   // emergency-brake threshold, TOTAL s
 double _kp = 0.35;                         // proportional gain: override per m/s of error
 double _brakeOverspeed = 2.0;              // m/s above cruise before wheel brakes engage
 int _propulsionSign = 1;                   // global wiring flip; -1 if it drives the wrong way
-bool _reverse = false;                     // travel direction chooser (flips cleanly)
-string _driveWheelGroup = "Drive Wheels";  // group holding the drive wheels (excludes guides)
+bool _reverse = false;                     // travel direction chooser
+string _driveWheelGroup = "Drive Wheels";  // group of drive wheels (excludes guide wheels)
 
 // ---- Discovered blocks -----------------------------------------------------
 IMyShipController _controller;
@@ -53,7 +31,6 @@ public void Save() { }
 
 public void Main(string argument, UpdateType updateSource)
 {
-    // Control ticks arrive via Update1; commands arrive via terminal/trigger.
     if ((updateSource & UpdateType.Update1) != 0)
     {
         ControlTick();
@@ -115,7 +92,6 @@ private void ControlTick()
 {
     if (_setupError != null || _controller == null || _wheels.Count == 0)
     {
-        // Something we depend on went away (block destroyed, config broke).
         Discover();
         if (_setupError != null)
         {
@@ -130,11 +106,11 @@ private void ControlTick()
     Vector3D v = _controller.GetShipVelocities().LinearVelocity;
     double totalSpeed = v.Length();
     double signedSpeed = Vector3D.Dot(v, _controller.WorldMatrix.Forward);
-    double travelSpeed = signedSpeed * tripDir;     // speed toward chosen travel direction
+    double travelSpeed = signedSpeed * tripDir;
     double error = _cruiseSpeed - travelSpeed;
     double overspeed = travelSpeed - _cruiseSpeed;
 
-    double command;   // drive effort in the travel direction, [-1..1]
+    double command;
     bool brake;
     bool emergency = totalSpeed > _maxSpeed;
 
@@ -146,22 +122,17 @@ private void ControlTick()
     }
     else if (overspeed > _brakeOverspeed)
     {
-        // Well over target: let the wheel brakes do the work.
         command = 0.0;
         brake = true;
     }
     else
     {
-        // Drive when under target; a slight negative command gives gentle
-        // engine braking when just barely over.
+        // Drive under target; slight negative command engine-brakes just over.
         command = Clamp(_kp * error, -1.0, 1.0);
         brake = false;
     }
 
-    // Convert the travel-direction command into a per-wheel override:
-    //   tripDir        - travel direction chooser
-    //   _propulsionSign - global wiring flip
-    //   SideSign        - left/right mirror (opposite signs per side)
+    // Per-wheel override = command * tripDir * wiring flip * left/right mirror.
     double baseOverride = command * tripDir * _propulsionSign;
     for (int i = 0; i < _wheels.Count; i++)
     {
@@ -200,7 +171,7 @@ private void ParseConfig()
     _reverse = ini.Get(S, "Reverse").ToBoolean(_reverse);
     _driveWheelGroup = ini.Get(S, "DriveWheelGroup").ToString(_driveWheelGroup);
 
-    // Guard against nonsensical values that would defeat the safety net.
+    // Keep the safety net meaningful even with odd config.
     if (_maxSpeed <= _cruiseSpeed) _maxSpeed = _cruiseSpeed + 5.0;
     if (_kp <= 0.0) _kp = 0.35;
 }
@@ -234,9 +205,7 @@ private void Discover()
     _controller = null;
     _wheels.Clear();
 
-    // Controller: prefer a Remote Control, else any ship controller on this
-    // construct. (Connector-docked grids are separate constructs, so other
-    // carts / the base are never included.)
+    // Prefer a Remote Control, else any ship controller on this construct.
     List<IMyShipController> controllers = new List<IMyShipController>();
     GridTerminalSystem.GetBlocksOfType(controllers);
     for (int i = 0; i < controllers.Count; i++)
@@ -254,7 +223,6 @@ private void Discover()
         return;
     }
 
-    // Drive wheels: from the configured group only.
     if (string.IsNullOrWhiteSpace(_driveWheelGroup))
     {
         _setupError = "DriveWheelGroup is not set in Custom Data.";
@@ -274,8 +242,8 @@ private void Discover()
         return;
     }
 
-    // Assign each wheel a side sign from its position relative to the
-    // controller's Right axis: left = +1, right = -1 (opposite override signs).
+    // Side sign from position vs the controller's Right axis: left +1, right -1
+    // (mirrored wheels need opposite override signs).
     Vector3D ctrlPos = _controller.GetPosition();
     Vector3D right = _controller.WorldMatrix.Right;
     for (int i = 0; i < raw.Count; i++)

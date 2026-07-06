@@ -1,0 +1,63 @@
+[h1]Track Cart Controller[/h1]
+A Programmable Block script that holds a steady speed for a track-guided wheeled cart travelling between two points (e.g. a base and a mine). It drives up grades, brakes down grades, and keeps speed under control through curves. Steering is assumed to be handled by the physical track — this script only manages propulsion and wheel brakes.
+
+[i]Iteration 1: cruise speed control. Later versions add position-based approach/docking and automatic destination selection.[/i]
+
+[h2]How it works[/h2]
+[list]
+[*]Reads the cart's velocity from a Remote Control (or cockpit) and holds a configurable target speed.
+[*]Proportional control: drives when below target, applies gentle engine-braking when slightly over, and engages the wheel brakes once overspeed passes a threshold.
+[*]A sign-independent emergency brake triggers if total speed ever exceeds MaxSpeed — so a misconfiguration fails safe instead of running away.
+[*]Only the drive wheels you designate are controlled; alignment/guide wheels are left untouched.
+[/list]
+
+[h2]Setup[/h2]
+[olist]
+[*]Place a Programmable Block on the cart with a Remote Control (or any cockpit/control seat).
+[*]Create a block group containing ONLY the drive wheels (do not include alignment/guide wheels). Default group name is [b]Drive Wheels[/b].
+[*]Load this script into the PB and recompile. If Custom Data is empty it writes a config template automatically.
+[*]Edit Custom Data if needed, then recompile or run the [b]reload[/b] argument.
+[/olist]
+Left vs right drive wheels are detected automatically and given opposite propulsion signs (Space Engineers applies wheel overrides raw, so mirrored wheels need opposite values).
+
+[h2]Commands[/h2]
+Run the PB with one of these arguments (button, sensor, timer, event controller, or manually):
+[list]
+[*][b]start[/b] — begin cruising toward CruiseSpeed
+[*][b]stop[/b] — halt and hold with brakes
+[*][b]reload[/b] — re-read Custom Data and re-discover blocks
+[*](no argument) — print status / setup info to the PB detail panel
+[/list]
+
+[h2]Configuration[/h2]
+All settings live in the PB's Custom Data, section [b][CartController][/b]:
+[list]
+[*][b]CruiseSpeed[/b] — target travel speed in m/s.
+[*][b]MaxSpeed[/b] — emergency-brake threshold on total speed (m/s); must be greater than CruiseSpeed.
+[*][b]Kp[/b] — proportional gain: propulsion override applied per m/s of error. Higher is more aggressive.
+[*][b]BrakeOverspeed[/b] — how many m/s above cruise before the wheel brakes engage (below this, gentle engine braking).
+[*][b]PropulsionSign[/b] — global wiring flip (1 or -1). See troubleshooting.
+[*][b]Reverse[/b] — flip travel direction along the track (true/false).
+[*][b]DriveWheelGroup[/b] — name of the block group holding only the drive wheels.
+[/list]
+
+[h2]Tuning[/h2]
+[list]
+[*]Start with a low CruiseSpeed and raise it once behaviour looks good.
+[*]If the cart oscillates around the target speed, lower Kp. If it's sluggish to reach speed, raise Kp.
+[*]If it overshoots badly on downhills before braking, lower BrakeOverspeed so the wheel brakes engage sooner.
+[*]One CruiseSpeed applies to the whole run; if curves can't handle the straightaway speed, lower CruiseSpeed.
+[/list]
+
+[h2]Troubleshooting[/h2]
+[b]It emergency-brakes immediately or oscillates hard on start[/b]
+The wheel propulsion is wired opposite to what the script assumes (a runaway the safety net is catching). Set [b]PropulsionSign = -1[/b], then reload.
+
+[b]It drives smoothly but toward the wrong end of the track[/b]
+Set [b]Reverse = true[/b], then reload.
+
+[b]The left/right wheel count looks wrong (not an even split)[/b]
+The status panel shows a "left N / right N" breakdown. Sides are classified using the Remote Control's Right axis — if the controller is mounted rotated relative to travel, the split can come out lopsided. Re-check that the drive-wheel group contains the correct wheels and that the controller faces along the track.
+
+[b]"No ship controller found" / "group not found"[/b]
+Ensure a Remote Control or cockpit is present, and that DriveWheelGroup matches an existing block group name.

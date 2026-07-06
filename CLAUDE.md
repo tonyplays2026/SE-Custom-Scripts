@@ -33,3 +33,8 @@ Scripts are deployed to the in-game local script browser at:
 Each script gets a folder there whose name matches the script's repo folder name (e.g. `TrackCartController`). Inside that folder the script file must be named **`Script.cs`** — that exact name is what makes it appear in the in-game script browser.
 
 Deploy on every script change: copy the repo's `<Name>/<Name>.cs` to `IngameScripts\local\<Name>\Script.cs`.
+
+## Documentation & Comments
+The `.cs` file is deployed verbatim into the PB, so in-script comments consume the block's character budget. Keep in-script comments lean — non-obvious "why" only (SE quirks, safety rationale), not narrative usage docs.
+
+Each script carries a `workshop.txt` alongside it, written in **Steam BBCode**. This is the source of truth for user-facing documentation (overview, setup, commands, config reference, tuning, troubleshooting) and doubles as the Steam Workshop description. Put detailed docs there, not in the script.
