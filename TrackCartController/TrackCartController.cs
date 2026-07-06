@@ -1,8 +1,8 @@
 // ============================================================================
-// Track Shuttle Controller
+// Track Cart Controller
 // Iteration 1 — Cruise speed controller
 //
-// Holds a configurable target speed for a track-guided wheeled shuttle, driving
+// Holds a configurable target speed for a track-guided wheeled cart, driving
 // up grades and braking down grades. Steering is assumed to be handled by the
 // physical track, so this script only manages propulsion and wheel brakes on a
 // defined set of DRIVE wheels (alignment/guide wheels are excluded).
@@ -21,7 +21,7 @@
 //   reload  - re-read Custom Data config and re-discover blocks
 //   (none)  - print status / setup info
 //
-// Config lives in this block's Custom Data (section [ShuttleController]); a
+// Config lives in this block's Custom Data (section [CartController]); a
 // template is written automatically the first time if it is empty.
 // ============================================================================
 
@@ -191,7 +191,7 @@ private void ParseConfig()
         return;
     }
 
-    const string S = "ShuttleController";
+    const string S = "CartController";
     _cruiseSpeed = ini.Get(S, "CruiseSpeed").ToDouble(_cruiseSpeed);
     _maxSpeed = ini.Get(S, "MaxSpeed").ToDouble(_maxSpeed);
     _kp = ini.Get(S, "Kp").ToDouble(_kp);
@@ -208,7 +208,7 @@ private void ParseConfig()
 private void WriteConfigTemplate()
 {
     MyIni ini = new MyIni();
-    const string S = "ShuttleController";
+    const string S = "CartController";
     ini.Set(S, "CruiseSpeed", _cruiseSpeed);
     ini.Set(S, "MaxSpeed", _maxSpeed);
     ini.Set(S, "Kp", _kp);
@@ -290,7 +290,7 @@ private void Discover()
 
 private void PrintRunning(double travelSpeed, double totalSpeed, double command, bool brake, bool emergency)
 {
-    Echo("== Track Shuttle — CRUISING ==");
+    Echo("== Track Cart — CRUISING ==");
     Echo("Target : " + _cruiseSpeed.ToString("0.0") + " m/s" + (_reverse ? "  (reverse)" : ""));
     Echo("Travel : " + travelSpeed.ToString("0.00") + " m/s");
     Echo("Total  : " + totalSpeed.ToString("0.00") + " m/s");
@@ -303,7 +303,7 @@ private void PrintRunning(double travelSpeed, double totalSpeed, double command,
 
 private void PrintSetup()
 {
-    Echo("== Track Shuttle Controller (Iteration 1) ==");
+    Echo("== Track Cart Controller (Iteration 1) ==");
     Echo("State: " + (_running ? "CRUISING" : "IDLE"));
     Echo("");
     Echo("Config:");
