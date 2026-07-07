@@ -1,19 +1,26 @@
 #!/usr/bin/env python
-"""PostToolUse hook: deploy a repo PB script to the in-game local scripts folder.
+"""PostToolUse hook: deploy a repo PB script folder to the in-game local folder.
 
-When a Write/Edit touches a script file of the form <Name>/<Name>.cs in this
-repo, copy it to:
+When a Write/Edit touches a deployable file in a script folder (a repo subfolder
+<Name> that contains <Name>.cs), sync that folder's publishable files to:
 
-    %APPDATA%\\SpaceEngineers\\IngameScripts\\local\\<Name>\\Script.cs
+    %APPDATA%\\SpaceEngineers\\IngameScripts\\local\\<Name>\\
 
-so it shows up in the in-game Programmable Block script browser. The file must
-be named Script.cs for the game to list it. Non-matching edits (ExampleConfig,
-helper .cs, etc.) are ignored. See CLAUDE.md -> Deployment.
+  <Name>.cs     -> Script.cs    (the name the game lists in the script browser)
+  modinfo.sb    -> modinfo.sb
+  Workshop.txt  -> Workshop.txt
+  thumb.png     -> thumb.png
+
+Only files that exist are copied. Editing any one of them re-syncs the set so
+the local folder stays publish-ready. Other edits (ExampleConfig.ini, .claude,
+etc.) are ignored. See CLAUDE.md -> Deployment.
 """
 import json
 import os
 import shutil
 import sys
+
+COMPANIONS = ["modinfo.sb", "Workshop.txt", "thumb.png"]
 
 
 def main():
@@ -26,16 +33,18 @@ def main():
     fp = tool_input.get("file_path") or ""
     if not fp:
         return
-
     fp = os.path.normpath(fp)
-    stem, ext = os.path.splitext(fp)
-    if ext.lower() != ".cs":
-        return
 
-    # Only deploy the canonical script file: <Name>/<Name>.cs
-    name = os.path.basename(stem)
-    parent = os.path.basename(os.path.dirname(fp))
-    if not name or name != parent:
+    folder = os.path.dirname(fp)
+    name = os.path.basename(folder)
+    if not name:
+        return
+    script_cs = os.path.join(folder, name + ".cs")
+    if not os.path.isfile(script_cs):
+        return  # not a script folder (needs <Name>/<Name>.cs)
+
+    # Only deploy when a publishable file changed (not ExampleConfig.ini, etc.).
+    if os.path.basename(fp) not in [name + ".cs"] + COMPANIONS:
         return
 
     appdata = os.environ.get("APPDATA")
@@ -44,16 +53,21 @@ def main():
         return
 
     dest_dir = os.path.join(appdata, "SpaceEngineers", "IngameScripts", "local", name)
-    dest = os.path.join(dest_dir, "Script.cs")
     try:
         if not os.path.isdir(dest_dir):
             os.makedirs(dest_dir)
-        shutil.copyfile(fp, dest)
+        copied = ["Script.cs"]
+        shutil.copyfile(script_cs, os.path.join(dest_dir, "Script.cs"))
+        for f in COMPANIONS:
+            src = os.path.join(folder, f)
+            if os.path.isfile(src):
+                shutil.copyfile(src, os.path.join(dest_dir, f))
+                copied.append(f)
     except Exception as e:
         print(json.dumps({"systemMessage": "Deploy FAILED for " + name + ": " + str(e)}))
         return
 
-    print(json.dumps({"systemMessage": "Deployed " + name + " -> IngameScripts/local/" + name + "/Script.cs"}))
+    print(json.dumps({"systemMessage": "Deployed " + name + ": " + ", ".join(copied)}))
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ Scripts are deployed to the in-game local script browser at:
 
 Each script gets a folder there whose name matches the script's repo folder name (e.g. `TrackCartController`). Inside that folder the script file must be named **`Script.cs`** — that exact name is what makes it appear in the in-game script browser.
 
-Deploy on every script change: copy the repo's `<Name>/<Name>.cs` to `IngameScripts\local\<Name>\Script.cs`.
+Deploy on every change: copy the repo's `<Name>/<Name>.cs` to `IngameScripts\local\<Name>\Script.cs`, and alongside it the publishable companions if present — `modinfo.sb`, `Workshop.txt`, `thumb.png` (kept under their own names). The `.claude/hooks/deploy-ingame-script.py` hook does this automatically on Write/Edit of any of those files.
 
 ## Documentation & Comments
 The `.cs` file is deployed verbatim into the PB, so in-script comments consume the block's character budget. Keep in-script comments lean — non-obvious "why" only (SE quirks, safety rationale), not narrative usage docs.
