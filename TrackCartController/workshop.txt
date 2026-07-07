@@ -27,7 +27,8 @@ The script records that stop's position and the connector currently connected. E
 [h2]Commands[/h2]
 Run the PB with one of these arguments (button, sensor, timer, event controller, or manually):
 [list]
-[*][b]goto <name>[/b] — drive to that stop, decelerate, and dock. Direction is chosen automatically.
+[*][b]next[/b] — drive to the OTHER stop automatically (two-stop shuttle). Fired while docked, it departs to the far end; if run while undocked it heads to the nearest stop to re-dock.
+[*][b]goto <name>[/b] — drive to a specific stop, decelerate, and dock. Direction is chosen automatically.
 [*][b]start[/b] — plain cruise along the track at CruiseSpeed (open-track testing; uses Reverse for direction).
 [*][b]stop[/b] — halt and hold with brakes.
 [*][b]setstop <name>[/b] — capture the current dock as a stop (see above).
@@ -35,6 +36,11 @@ Run the PB with one of these arguments (button, sensor, timer, event controller,
 [*][b]reload[/b] — re-read Custom Data and re-discover blocks.
 [*](no argument) — print status / setup info to the PB detail panel.
 [/list]
+
+[h2]Automatic back-and-forth[/h2]
+With exactly two stops captured, [b]next[/b] is the one-button shuttle trigger: the cart checks which connector is locked, and drives to the other stop. Wire [b]next[/b] to a button, timer, sensor, or event controller to run the route.
+
+While the cart is docked it shares the base's terminal system, so a timer or event controller [i]on the base[/i] can run the cart's Programmable Block with the [b]next[/b] argument directly — no antenna or inter-grid messaging needed. This lets a separate loading/unloading routine dispatch the cart when it's ready.
 
 [h2]Configuration[/h2]
 Settings live in the PB's Custom Data, section [b][CartController][/b]:

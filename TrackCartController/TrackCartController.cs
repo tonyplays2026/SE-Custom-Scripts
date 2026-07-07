@@ -1,7 +1,8 @@
-// Track Cart Controller — Iteration 2: cruise + position-based approach & dock.
+// Track Cart Controller — Iteration 3: cruise, approach/dock, auto back-and-forth.
 // Holds a target speed on a track-guided wheeled cart (steering handled by the
-// track); drives up grades, brakes down grades, and can drive to a captured
-// stop and dock automatically. Setup, commands, config, tuning: see workshop.txt.
+// track); drives up grades, brakes down grades, drives to a captured stop and
+// docks, and can run to the other stop automatically ('next'). Setup, commands,
+// config, tuning: see workshop.txt.
 
 // ---- Configuration (parsed from Custom Data [CartController]) ---------------
 double _cruiseSpeed = 10.0;               // target travel speed (m/s)
@@ -52,6 +53,7 @@ public void Main(string argument, UpdateType updateSource)
     else if (lower == "stop") StopAll("Stopped. Brakes holding.");
     else if (lower == "reload") { ParseConfig(); Discover(); PrintSetup(); }
     else if (lower == "liststops") ListStops();
+    else if (lower == "next") StartNext();
     else if (lower.StartsWith("setstop")) CaptureStop(raw.Substring(7).Trim());
     else if (lower.StartsWith("goto")) StartGoto(raw.Substring(4).Trim());
     else PrintSetup();
@@ -83,13 +85,35 @@ private void StartGoto(string name)
         ListStops();
         return;
     }
+    BeginGoto(stop);
+}
+
+private void StartNext()
+{
+    ParseConfig();
+    Discover();
+    if (_setupError != null) { Echo("Cannot go."); PrintSetup(); return; }
+    if (_stops.Count != 2)
+    {
+        Echo("'next' needs exactly 2 stops (have " + _stops.Count + "). Use goto <name>.");
+        ListStops();
+        return;
+    }
+
+    StopInfo current = CurrentDockedStop();
+    StopInfo target = current != null ? OtherStop(current) : NearestStop();
+    if (target == null) { Echo("Could not determine a destination stop."); return; }
+    BeginGoto(target);
+}
+
+// Begin a run to a stop: verify its connector, release any lock, and depart.
+private void BeginGoto(StopInfo stop)
+{
     if (FindConnector(stop.ConnectorName) == null)
     {
         Echo("Stop '" + stop.Name + "' uses connector '" + stop.ConnectorName + "', which was not found.");
         return;
     }
-
-    // Release any currently-locked connector before departing.
     for (int i = 0; i < _connectors.Count; i++)
         if (_connectors[i].Status == MyShipConnectorStatus.Connected) _connectors[i].Disconnect();
 
@@ -97,6 +121,39 @@ private void StartGoto(string name)
     _targetStop = stop.Name;
     Runtime.UpdateFrequency = UpdateFrequency.Update1;
     Echo("En route to " + stop.Name + ".");
+}
+
+// The stop whose connector is currently locked, or null if not docked.
+private StopInfo CurrentDockedStop()
+{
+    for (int i = 0; i < _connectors.Count; i++)
+        if (_connectors[i].Status == MyShipConnectorStatus.Connected)
+            foreach (StopInfo s in _stops.Values)
+                if (s.ConnectorName == _connectors[i].CustomName) return s;
+    return null;
+}
+
+// The other of exactly two stops.
+private StopInfo OtherStop(StopInfo current)
+{
+    foreach (StopInfo s in _stops.Values)
+        if (!string.Equals(s.Name, current.Name, StringComparison.OrdinalIgnoreCase)) return s;
+    return null;
+}
+
+// The stop whose connector is closest to its dock point (nearest to re-dock).
+private StopInfo NearestStop()
+{
+    StopInfo best = null;
+    double bestDist = double.MaxValue;
+    foreach (StopInfo s in _stops.Values)
+    {
+        IMyShipConnector c = FindConnector(s.ConnectorName);
+        if (c == null) continue;
+        double d = (s.Pos - c.GetPosition()).Length();
+        if (d < bestDist) { bestDist = d; best = s; }
+    }
+    return best;
 }
 
 private void CaptureStop(string name)
@@ -175,6 +232,11 @@ private void GotoControl()
         _mode = Mode.Idle;
         Runtime.UpdateFrequency = UpdateFrequency.None;
         Echo("Docked at " + stop.Name + ".");
+        if (_stops.Count == 2)
+        {
+            StopInfo other = OtherStop(stop);
+            if (other != null) Echo("Trigger 'next' to depart to " + other.Name + ".");
+        }
         return;
     }
 
@@ -386,7 +448,7 @@ private void Discover()
 
 private void PrintSetup()
 {
-    Echo("== Track Cart Controller (Iteration 2) ==");
+    Echo("== Track Cart Controller (Iteration 3) ==");
     Echo("Mode: " + _mode);
     Echo("");
     Echo("Config:");
@@ -417,8 +479,17 @@ private void PrintSetup()
     }
     Echo("");
     ListStops();
+    if (_setupError == null && _stops.Count == 2)
+    {
+        StopInfo current = CurrentDockedStop();
+        if (current != null)
+        {
+            StopInfo other = OtherStop(current);
+            Echo("Docked at " + current.Name + (other != null ? " — 'next' departs to " + other.Name : "") + ".");
+        }
+    }
     Echo("");
-    Echo("Commands: start | stop | reload | setstop <name> | goto <name> | liststops");
+    Echo("Commands: next | goto <name> | start | stop | setstop <name> | liststops | reload");
 }
 
 // ---- Helpers ---------------------------------------------------------------
