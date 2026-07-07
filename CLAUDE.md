@@ -22,6 +22,9 @@ Every script compiles as a single class body extending `MyGridProgram`. No `usin
 - `Storage` — single string persisted across saves; serialize/deserialize manually
 - `IGC` — Inter-Grid Communication; send and receive messages between grids
 
+## Grid Scoping (gotcha)
+`GridTerminalSystem` spans grids docked by **connector**, not just the local grid. When a grid is connected to others (e.g. a cart docked to a base, or multiple carts docked to the same base), `GetBlocksOfType` returns blocks from all of them. To restrict a lookup to the block's own construct (its grid + mechanical subgrids via rotors/pistons/hinges, excluding connector-docked grids), pass a predicate: `GetBlocksOfType(list, b => b.IsSameConstructAs(Me))`. Block groups can likewise span docked grids — filter the same way. Note: merge blocks fuse grids into one, so `IsSameConstructAs` does not separate those.
+
 ## Script Organization
 Each script lives in its own subfolder. The `.cs` file contains the raw script body only — valid to paste directly into a PB.
 

@@ -1,23 +1,31 @@
-// Track Cart Controller — Iteration 1: cruise speed controller.
+// Track Cart Controller — Iteration 2: cruise + position-based approach & dock.
 // Holds a target speed on a track-guided wheeled cart (steering handled by the
-// track); drives up grades and brakes down grades.
-// Setup, commands, config, and tuning: see workshop.txt.
+// track); drives up grades, brakes down grades, and can drive to a captured
+// stop and dock automatically. Setup, commands, config, tuning: see workshop.txt.
 
-// ---- Configuration (parsed from Custom Data) -------------------------------
+// ---- Configuration (parsed from Custom Data [CartController]) ---------------
 double _cruiseSpeed = 10.0;               // target travel speed (m/s)
 double _maxSpeed = 15.0;                   // emergency-brake threshold, TOTAL speed (m/s)
 double _kp = 0.35;                         // proportional gain: override per m/s of error
-double _brakeOverspeed = 2.0;              // m/s above cruise before wheel brakes engage
+double _brakeOverspeed = 2.0;              // m/s above target before wheel brakes engage
 int _propulsionSign = 1;                   // global wiring flip; -1 if it drives the wrong way
-bool _reverse = false;                     // travel direction chooser
+bool _reverse = false;                     // plain-cruise travel direction chooser
 string _driveWheelGroup = "Drive Wheels";  // group of drive wheels (excludes guide wheels)
+double _crawlSpeed = 1.0;                   // min approach speed near a stop (m/s)
+double _approachDecel = 1.5;               // deceleration used for the approach profile (m/s^2)
+double _connectDistance = 2.5;             // distance to a stop at which to crawl & connect (m)
 
 // ---- Discovered blocks -----------------------------------------------------
 IMyShipController _controller;
 List<DriveWheel> _wheels = new List<DriveWheel>();
+List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
+
+// ---- Captured stops (Custom Data [Stops]) ----------------------------------
+Dictionary<string, StopInfo> _stops = new Dictionary<string, StopInfo>(StringComparer.OrdinalIgnoreCase);
 
 // ---- Runtime state ---------------------------------------------------------
-bool _running = false;
+Mode _mode = Mode.Idle;
+string _targetStop = null;
 string _setupError = null;
 
 public Program()
@@ -37,24 +45,16 @@ public void Main(string argument, UpdateType updateSource)
         return;
     }
 
-    string arg = (argument ?? "").Trim().ToLowerInvariant();
-    switch (arg)
-    {
-        case "start":
-            StartCruise();
-            break;
-        case "stop":
-            StopCruise();
-            break;
-        case "reload":
-            ParseConfig();
-            Discover();
-            PrintSetup();
-            break;
-        default:
-            PrintSetup();
-            break;
-    }
+    string raw = (argument ?? "").Trim();
+    string lower = raw.ToLowerInvariant();
+
+    if (lower == "start") StartCruise();
+    else if (lower == "stop") StopAll("Stopped. Brakes holding.");
+    else if (lower == "reload") { ParseConfig(); Discover(); PrintSetup(); }
+    else if (lower == "liststops") ListStops();
+    else if (lower.StartsWith("setstop")) CaptureStop(raw.Substring(7).Trim());
+    else if (lower.StartsWith("goto")) StartGoto(raw.Substring(4).Trim());
+    else PrintSetup();
 }
 
 // ---- Commands --------------------------------------------------------------
@@ -63,27 +63,74 @@ private void StartCruise()
 {
     ParseConfig();
     Discover();
-    if (_setupError != null)
-    {
-        Echo("Cannot start.");
-        PrintSetup();
-        return;
-    }
-    _running = true;
+    if (_setupError != null) { Echo("Cannot start."); PrintSetup(); return; }
+    _mode = Mode.Cruise;
     Runtime.UpdateFrequency = UpdateFrequency.Update1;
-    Echo("Cruising started. Target " + _cruiseSpeed.ToString("0.0") + " m/s.");
+    Echo("Cruising. Target " + _cruiseSpeed.ToString("0.0") + " m/s.");
 }
 
-private void StopCruise()
+private void StartGoto(string name)
 {
-    _running = false;
-    Runtime.UpdateFrequency = UpdateFrequency.None;
-    for (int i = 0; i < _wheels.Count; i++)
+    ParseConfig();
+    Discover();
+    if (_setupError != null) { Echo("Cannot go."); PrintSetup(); return; }
+    if (string.IsNullOrWhiteSpace(name)) { Echo("Usage: goto <stop name>"); ListStops(); return; }
+
+    StopInfo stop;
+    if (!_stops.TryGetValue(name, out stop))
     {
-        _wheels[i].Wheel.PropulsionOverride = 0f;
-        _wheels[i].Wheel.Brake = true;
+        Echo("Unknown stop '" + name + "'.");
+        ListStops();
+        return;
     }
-    Echo("Stopped. Brakes holding.");
+    if (FindConnector(stop.ConnectorName) == null)
+    {
+        Echo("Stop '" + stop.Name + "' uses connector '" + stop.ConnectorName + "', which was not found.");
+        return;
+    }
+
+    // Release any currently-locked connector before departing.
+    for (int i = 0; i < _connectors.Count; i++)
+        if (_connectors[i].Status == MyShipConnectorStatus.Connected) _connectors[i].Disconnect();
+
+    _mode = Mode.Goto;
+    _targetStop = stop.Name;
+    Runtime.UpdateFrequency = UpdateFrequency.Update1;
+    Echo("En route to " + stop.Name + ".");
+}
+
+private void CaptureStop(string name)
+{
+    ParseConfig();
+    Discover();
+    if (string.IsNullOrWhiteSpace(name)) { Echo("Usage: setstop <stop name>"); return; }
+    if (name.Contains(".")) { Echo("Stop names cannot contain '.'"); return; }
+    if (_controller == null) { Echo("No controller found."); return; }
+
+    IMyShipConnector docked = null;
+    int connectedCount = 0;
+    for (int i = 0; i < _connectors.Count; i++)
+    {
+        if (_connectors[i].Status == MyShipConnectorStatus.Connected)
+        {
+            if (docked == null) docked = _connectors[i];
+            connectedCount++;
+        }
+    }
+    if (docked == null) { Echo("Dock the cart at the stop first (no connector is connected)."); return; }
+    if (connectedCount > 1) Echo("Warning: multiple connectors connected; using '" + docked.CustomName + "'.");
+
+    SaveStop(name, docked.GetPosition(), docked.CustomName);
+    ParseConfig(); // reload so _stops reflects the new entry
+    Echo("Saved stop '" + name + "' at connector '" + docked.CustomName + "'.");
+}
+
+private void ListStops()
+{
+    if (_stops.Count == 0) { Echo("No stops captured. Dock and run: setstop <name>"); return; }
+    Echo("Stops (" + _stops.Count + "):");
+    foreach (StopInfo s in _stops.Values)
+        Echo("  " + s.Name + "  [" + s.ConnectorName + "]");
 }
 
 // ---- Control loop ----------------------------------------------------------
@@ -93,47 +140,89 @@ private void ControlTick()
     if (_setupError != null || _controller == null || _wheels.Count == 0)
     {
         Discover();
-        if (_setupError != null)
-        {
-            StopCruise();
-            Echo("Setup error, cruise halted: " + _setupError);
-            return;
-        }
+        if (_setupError != null) { StopAll("Setup error, halted: " + _setupError); return; }
     }
 
+    if (_mode == Mode.Cruise) CruiseControl();
+    else if (_mode == Mode.Goto) GotoControl();
+}
+
+private void CruiseControl()
+{
     int tripDir = _reverse ? -1 : 1;
+    double travelSpeed, totalSpeed, command;
+    bool brake, emergency;
+    DriveTowards(_cruiseSpeed, tripDir, out travelSpeed, out totalSpeed, out command, out brake, out emergency);
 
+    Echo("== Track Cart — CRUISING ==");
+    Echo("Target : " + _cruiseSpeed.ToString("0.0") + " m/s" + (_reverse ? "  (reverse)" : ""));
+    Echo("Travel : " + travelSpeed.ToString("0.00") + " m/s");
+    Echo("Total  : " + totalSpeed.ToString("0.00") + " m/s" + (brake ? "   [BRAKES]" : ""));
+    if (emergency) Echo("!! EMERGENCY BRAKE — over MaxSpeed. If wrong way, set PropulsionSign = -1.");
+    Echo("Send 'stop' to halt.");
+}
+
+private void GotoControl()
+{
+    StopInfo stop;
+    if (!_stops.TryGetValue(_targetStop, out stop)) { StopAll("Target stop lost."); return; }
+    IMyShipConnector conn = FindConnector(stop.ConnectorName);
+    if (conn == null) { StopAll("Connector '" + stop.ConnectorName + "' not found."); return; }
+
+    if (conn.Status == MyShipConnectorStatus.Connected)
+    {
+        ApplyWheels(0.0, true);
+        _mode = Mode.Idle;
+        Runtime.UpdateFrequency = UpdateFrequency.None;
+        Echo("Docked at " + stop.Name + ".");
+        return;
+    }
+
+    Vector3D toStop = stop.Pos - conn.GetPosition();
+    double distance = toStop.Length();
+    int tripDir = Vector3D.Dot(toStop, _controller.WorldMatrix.Forward) >= 0 ? 1 : -1;
+
+    // Kinematic deceleration profile: slow smoothly as the stop nears.
+    double allowed = Math.Sqrt(2.0 * _approachDecel * Math.Max(distance - _connectDistance, 0.0));
+    double target = Clamp(allowed, _crawlSpeed, _cruiseSpeed);
+
+    if (conn.Status == MyShipConnectorStatus.Connectable) conn.Connect();
+
+    double travelSpeed, totalSpeed, command;
+    bool brake, emergency;
+    DriveTowards(target, tripDir, out travelSpeed, out totalSpeed, out command, out brake, out emergency);
+
+    Echo("== Track Cart — GOTO " + stop.Name + " ==");
+    Echo("Distance: " + distance.ToString("0.0") + " m");
+    Echo("Target  : " + target.ToString("0.00") + " m/s");
+    Echo("Travel  : " + travelSpeed.ToString("0.00") + " m/s");
+    Echo("Total   : " + totalSpeed.ToString("0.00") + " m/s" + (brake ? "   [BRAKES]" : ""));
+    Echo("Connector: " + conn.CustomName + " (" + conn.Status + ")");
+    if (emergency) Echo("!! EMERGENCY BRAKE — over MaxSpeed.");
+    Echo("Send 'stop' to abort.");
+}
+
+// Shared speed controller: hold 'target' m/s in the chosen track direction.
+private void DriveTowards(double target, int tripDir, out double travelSpeed, out double totalSpeed, out double command, out bool brake, out bool emergency)
+{
     Vector3D v = _controller.GetShipVelocities().LinearVelocity;
-    double totalSpeed = v.Length();
+    totalSpeed = v.Length();
     double signedSpeed = Vector3D.Dot(v, _controller.WorldMatrix.Forward);
-    double travelSpeed = signedSpeed * tripDir;
-    double error = _cruiseSpeed - travelSpeed;
-    double overspeed = travelSpeed - _cruiseSpeed;
+    travelSpeed = signedSpeed * tripDir;
+    double error = target - travelSpeed;
+    double overspeed = travelSpeed - target;
+    emergency = totalSpeed > _maxSpeed;
 
-    double command;
-    bool brake;
-    bool emergency = totalSpeed > _maxSpeed;
+    if (emergency) { command = 0.0; brake = true; }
+    else if (overspeed > _brakeOverspeed) { command = 0.0; brake = true; }
+    else { command = Clamp(_kp * error, -1.0, 1.0); brake = false; }
 
-    if (emergency)
-    {
-        // Sign-independent safety net: kill thrust and brake hard.
-        command = 0.0;
-        brake = true;
-    }
-    else if (overspeed > _brakeOverspeed)
-    {
-        command = 0.0;
-        brake = true;
-    }
-    else
-    {
-        // Drive under target; slight negative command engine-brakes just over.
-        command = Clamp(_kp * error, -1.0, 1.0);
-        brake = false;
-    }
+    ApplyWheels(command * tripDir * _propulsionSign, brake);
+}
 
-    // Per-wheel override = command * tripDir * wiring flip * left/right mirror.
-    double baseOverride = command * tripDir * _propulsionSign;
+// baseOverride already folds in tripDir and the wiring flip; SideSign mirrors L/R.
+private void ApplyWheels(double baseOverride, bool brake)
+{
     for (int i = 0; i < _wheels.Count; i++)
     {
         DriveWheel dw = _wheels[i];
@@ -141,18 +230,28 @@ private void ControlTick()
         dw.Wheel.PropulsionOverride = (float)(baseOverride * dw.SideSign);
         dw.Wheel.Brake = brake;
     }
+}
 
-    PrintRunning(travelSpeed, totalSpeed, command, brake, emergency);
+private void StopAll(string reason)
+{
+    _mode = Mode.Idle;
+    Runtime.UpdateFrequency = UpdateFrequency.None;
+    ApplyWheels(0.0, true);
+    if (reason != null) Echo(reason);
+}
+
+private IMyShipConnector FindConnector(string customName)
+{
+    for (int i = 0; i < _connectors.Count; i++)
+        if (_connectors[i].CustomName == customName) return _connectors[i];
+    return null;
 }
 
 // ---- Configuration ---------------------------------------------------------
 
 private void ParseConfig()
 {
-    if (string.IsNullOrWhiteSpace(Me.CustomData))
-    {
-        WriteConfigTemplate();
-    }
+    if (string.IsNullOrWhiteSpace(Me.CustomData)) WriteConfigTemplate();
 
     MyIni ini = new MyIni();
     MyIniParseResult result;
@@ -170,10 +269,49 @@ private void ParseConfig()
     _propulsionSign = ini.Get(S, "PropulsionSign").ToInt32(_propulsionSign) < 0 ? -1 : 1;
     _reverse = ini.Get(S, "Reverse").ToBoolean(_reverse);
     _driveWheelGroup = ini.Get(S, "DriveWheelGroup").ToString(_driveWheelGroup);
+    _crawlSpeed = ini.Get(S, "CrawlSpeed").ToDouble(_crawlSpeed);
+    _approachDecel = ini.Get(S, "ApproachDecel").ToDouble(_approachDecel);
+    _connectDistance = ini.Get(S, "ConnectDistance").ToDouble(_connectDistance);
 
-    // Keep the safety net meaningful even with odd config.
+    // Keep control values sane.
     if (_maxSpeed <= _cruiseSpeed) _maxSpeed = _cruiseSpeed + 5.0;
     if (_kp <= 0.0) _kp = 0.35;
+    if (_crawlSpeed <= 0.0) _crawlSpeed = 0.5;
+    if (_approachDecel <= 0.0) _approachDecel = 1.0;
+    if (_connectDistance < 0.0) _connectDistance = 2.0;
+
+    LoadStops(ini);
+}
+
+private void LoadStops(MyIni ini)
+{
+    _stops.Clear();
+    const string S = "Stops";
+    List<MyIniKey> keys = new List<MyIniKey>();
+    ini.GetKeys(S, keys);
+    for (int i = 0; i < keys.Count; i++)
+    {
+        string name = keys[i].Name;
+        if (name.Contains(".")) continue; // coordinate sub-key
+        string connector = ini.Get(S, name).ToString("");
+        double x = ini.Get(S, name + ".X").ToDouble();
+        double y = ini.Get(S, name + ".Y").ToDouble();
+        double z = ini.Get(S, name + ".Z").ToDouble();
+        _stops[name] = new StopInfo(name, new Vector3D(x, y, z), connector);
+    }
+}
+
+private void SaveStop(string name, Vector3D pos, string connector)
+{
+    MyIni ini = new MyIni();
+    MyIniParseResult result;
+    ini.TryParse(Me.CustomData, out result);
+    const string S = "Stops";
+    ini.Set(S, name, connector);
+    ini.Set(S, name + ".X", pos.X);
+    ini.Set(S, name + ".Y", pos.Y);
+    ini.Set(S, name + ".Z", pos.Z);
+    Me.CustomData = ini.ToString();
 }
 
 private void WriteConfigTemplate()
@@ -187,13 +325,19 @@ private void WriteConfigTemplate()
     ini.Set(S, "PropulsionSign", _propulsionSign);
     ini.Set(S, "Reverse", _reverse);
     ini.Set(S, "DriveWheelGroup", _driveWheelGroup);
+    ini.Set(S, "CrawlSpeed", _crawlSpeed);
+    ini.Set(S, "ApproachDecel", _approachDecel);
+    ini.Set(S, "ConnectDistance", _connectDistance);
     ini.SetComment(S, "CruiseSpeed", "Target travel speed (m/s).");
     ini.SetComment(S, "MaxSpeed", "Emergency-brake threshold on total speed (m/s).");
     ini.SetComment(S, "Kp", "Proportional gain: propulsion override per m/s of error.");
-    ini.SetComment(S, "BrakeOverspeed", "m/s above cruise before wheel brakes engage.");
+    ini.SetComment(S, "BrakeOverspeed", "m/s above target before wheel brakes engage.");
     ini.SetComment(S, "PropulsionSign", "Global wiring flip. Set -1 if it emergency-brakes / drives the wrong way.");
-    ini.SetComment(S, "Reverse", "Flip travel direction along the track (true/false).");
+    ini.SetComment(S, "Reverse", "Plain-cruise travel direction (true/false). Not used by goto.");
     ini.SetComment(S, "DriveWheelGroup", "Block group holding ONLY the drive wheels (exclude alignment wheels).");
+    ini.SetComment(S, "CrawlSpeed", "Minimum approach speed near a stop (m/s).");
+    ini.SetComment(S, "ApproachDecel", "Deceleration used to plan the approach slowdown (m/s^2).");
+    ini.SetComment(S, "ConnectDistance", "Distance to the stop at which to crawl and connect (m).");
     Me.CustomData = ini.ToString();
 }
 
@@ -204,43 +348,27 @@ private void Discover()
     _setupError = null;
     _controller = null;
     _wheels.Clear();
+    _connectors.Clear();
 
-    // Prefer a Remote Control, else any ship controller on this construct.
+    // Scope every lookup to THIS cart. The terminal system spans grids docked
+    // by connector (the base and any other carts), so IsSameConstructAs(Me)
+    // restricts results to the cart + its mechanical subgrids only.
+    GridTerminalSystem.GetBlocksOfType(_connectors, c => c.IsSameConstructAs(Me));
+
+    // Prefer a Remote Control, else any ship controller on this cart.
     List<IMyShipController> controllers = new List<IMyShipController>();
-    GridTerminalSystem.GetBlocksOfType(controllers);
+    GridTerminalSystem.GetBlocksOfType(controllers, c => c.IsSameConstructAs(Me));
     for (int i = 0; i < controllers.Count; i++)
-    {
-        if (controllers[i] is IMyRemoteControl)
-        {
-            _controller = controllers[i];
-            break;
-        }
-    }
+        if (controllers[i] is IMyRemoteControl) { _controller = controllers[i]; break; }
     if (_controller == null && controllers.Count > 0) _controller = controllers[0];
-    if (_controller == null)
-    {
-        _setupError = "No ship controller (remote/cockpit) found.";
-        return;
-    }
+    if (_controller == null) { _setupError = "No ship controller (remote/cockpit) found."; return; }
 
-    if (string.IsNullOrWhiteSpace(_driveWheelGroup))
-    {
-        _setupError = "DriveWheelGroup is not set in Custom Data.";
-        return;
-    }
+    if (string.IsNullOrWhiteSpace(_driveWheelGroup)) { _setupError = "DriveWheelGroup is not set in Custom Data."; return; }
     IMyBlockGroup grp = GridTerminalSystem.GetBlockGroupWithName(_driveWheelGroup);
-    if (grp == null)
-    {
-        _setupError = "Drive wheel group '" + _driveWheelGroup + "' not found.";
-        return;
-    }
+    if (grp == null) { _setupError = "Drive wheel group '" + _driveWheelGroup + "' not found."; return; }
     List<IMyMotorSuspension> raw = new List<IMyMotorSuspension>();
-    grp.GetBlocksOfType(raw);
-    if (raw.Count == 0)
-    {
-        _setupError = "Group '" + _driveWheelGroup + "' contains no wheel suspensions.";
-        return;
-    }
+    grp.GetBlocksOfType(raw, w => w.IsSameConstructAs(Me)); // group can span docked grids too
+    if (raw.Count == 0) { _setupError = "Group '" + _driveWheelGroup + "' contains no wheel suspensions."; return; }
 
     // Side sign from position vs the controller's Right axis: left +1, right -1
     // (mirrored wheels need opposite override signs).
@@ -256,31 +384,20 @@ private void Discover()
 
 // ---- Status output ---------------------------------------------------------
 
-private void PrintRunning(double travelSpeed, double totalSpeed, double command, bool brake, bool emergency)
-{
-    Echo("== Track Cart — CRUISING ==");
-    Echo("Target : " + _cruiseSpeed.ToString("0.0") + " m/s" + (_reverse ? "  (reverse)" : ""));
-    Echo("Travel : " + travelSpeed.ToString("0.00") + " m/s");
-    Echo("Total  : " + totalSpeed.ToString("0.00") + " m/s");
-    Echo("Command: " + command.ToString("0.00") + (brake ? "   [BRAKES]" : ""));
-    if (emergency)
-        Echo("!! EMERGENCY BRAKE — over MaxSpeed. If it drove the wrong way, set PropulsionSign = -1.");
-    Echo("Drive wheels: " + _wheels.Count);
-    Echo("Send 'stop' to halt.");
-}
-
 private void PrintSetup()
 {
-    Echo("== Track Cart Controller (Iteration 1) ==");
-    Echo("State: " + (_running ? "CRUISING" : "IDLE"));
+    Echo("== Track Cart Controller (Iteration 2) ==");
+    Echo("Mode: " + _mode);
     Echo("");
     Echo("Config:");
     Echo("  CruiseSpeed     = " + _cruiseSpeed.ToString("0.0") + " m/s");
     Echo("  MaxSpeed        = " + _maxSpeed.ToString("0.0") + " m/s");
     Echo("  Kp              = " + _kp.ToString("0.00"));
     Echo("  BrakeOverspeed  = " + _brakeOverspeed.ToString("0.0") + " m/s");
-    Echo("  PropulsionSign  = " + _propulsionSign);
-    Echo("  Reverse         = " + _reverse);
+    Echo("  CrawlSpeed      = " + _crawlSpeed.ToString("0.0") + " m/s");
+    Echo("  ApproachDecel   = " + _approachDecel.ToString("0.0") + " m/s2");
+    Echo("  ConnectDistance = " + _connectDistance.ToString("0.0") + " m");
+    Echo("  PropulsionSign  = " + _propulsionSign + "   Reverse = " + _reverse);
     Echo("  DriveWheelGroup = " + _driveWheelGroup);
     Echo("");
     if (_setupError != null)
@@ -291,14 +408,17 @@ private void PrintSetup()
     {
         int left = 0, rightCount = 0;
         for (int i = 0; i < _wheels.Count; i++)
-        {
             if (_wheels[i].SideSign > 0) left++; else rightCount++;
-        }
-        Echo("Controller  : " + _controller.CustomName);
+        Echo("Controller : " + _controller.CustomName);
         Echo("Drive wheels: " + _wheels.Count + "  (left " + left + " / right " + rightCount + ")");
+        Echo("Connectors : " + _connectors.Count);
+        for (int i = 0; i < _connectors.Count; i++)
+            Echo("  - " + _connectors[i].CustomName + " (" + _connectors[i].Status + ")");
     }
     Echo("");
-    Echo("Commands: start | stop | reload");
+    ListStops();
+    Echo("");
+    Echo("Commands: start | stop | reload | setstop <name> | goto <name> | liststops");
 }
 
 // ---- Helpers ---------------------------------------------------------------
@@ -310,7 +430,9 @@ private static double Clamp(double x, double lo, double hi)
     return x;
 }
 
-// Pairs a drive wheel with its side sign (left = +1, right = -1).
+private enum Mode { Idle, Cruise, Goto }
+
+// A drive wheel with its side sign (left = +1, right = -1).
 private class DriveWheel
 {
     public IMyMotorSuspension Wheel;
@@ -320,5 +442,20 @@ private class DriveWheel
     {
         Wheel = wheel;
         SideSign = sideSign;
+    }
+}
+
+// A captured stop: world position + the connector that docks there.
+private class StopInfo
+{
+    public string Name;
+    public Vector3D Pos;
+    public string ConnectorName;
+
+    public StopInfo(string name, Vector3D pos, string connectorName)
+    {
+        Name = name;
+        Pos = pos;
+        ConnectorName = connectorName;
     }
 }
