@@ -2,7 +2,7 @@
 // Holds a target speed on a track-guided wheeled cart (steering handled by the
 // track); drives up grades, brakes down grades, drives to a captured stop and
 // docks, and can run to the other stop automatically ('next'). Setup, commands,
-// config, tuning: see workshop.txt.
+// config, tuning: see Workshop.txt.
 
 // ---- Configuration (parsed from Custom Data [CartController]) ---------------
 double _cruiseSpeed = 10.0;               // target travel speed (m/s)
@@ -34,6 +34,7 @@ public Program()
     Runtime.UpdateFrequency = UpdateFrequency.None;
     ParseConfig();
     Discover();
+    WriteScreen(DockedScreenText());
 }
 
 public void Save() { }
@@ -217,6 +218,7 @@ private void CruiseControl()
     Echo("Total  : " + totalSpeed.ToString("0.00") + " m/s" + (brake ? "   [BRAKES]" : ""));
     if (emergency) Echo("!! EMERGENCY BRAKE — over MaxSpeed. If wrong way, set PropulsionSign = -1.");
     Echo("Send 'stop' to halt.");
+    WriteScreen("CRUISING\n" + travelSpeed.ToString("0") + " m/s");
 }
 
 private void GotoControl()
@@ -237,6 +239,7 @@ private void GotoControl()
             StopInfo other = OtherStop(stop);
             if (other != null) Echo("Trigger 'next' to depart to " + other.Name + ".");
         }
+        WriteScreen(DockedScreenText());
         return;
     }
 
@@ -262,6 +265,7 @@ private void GotoControl()
     Echo("Connector: " + conn.CustomName + " (" + conn.Status + ")");
     if (emergency) Echo("!! EMERGENCY BRAKE — over MaxSpeed.");
     Echo("Send 'stop' to abort.");
+    WriteScreen("EN ROUTE TO\n" + stop.Name + "\n" + distance.ToString("0") + " m");
 }
 
 // Shared speed controller: hold 'target' m/s in the chosen track direction.
@@ -300,6 +304,7 @@ private void StopAll(string reason)
     Runtime.UpdateFrequency = UpdateFrequency.None;
     ApplyWheels(0.0, true);
     if (reason != null) Echo(reason);
+    WriteScreen(DockedScreenText());
 }
 
 private IMyShipConnector FindConnector(string customName)
@@ -490,6 +495,7 @@ private void PrintSetup()
     }
     Echo("");
     Echo("Commands: next | goto <name> | start | stop | setstop <name> | liststops | reload");
+    WriteScreen(DockedScreenText());
 }
 
 // ---- Helpers ---------------------------------------------------------------
@@ -499,6 +505,26 @@ private static double Clamp(double x, double lo, double hi)
     if (x < lo) return lo;
     if (x > hi) return hi;
     return x;
+}
+
+// Draw a short status to the PB's own screen.
+private void WriteScreen(string text)
+{
+    if (Me.SurfaceCount == 0) return;
+    IMyTextSurface s = Me.GetSurface(0);
+    s.ContentType = ContentType.TEXT_AND_IMAGE;
+    s.Alignment = TextAlignment.CENTER;
+    s.FontSize = 1.6f;
+    s.WriteText(text, false);
+}
+
+// Screen text for the idle/docked state.
+private string DockedScreenText()
+{
+    StopInfo current = CurrentDockedStop();
+    if (current == null) return "IDLE";
+    StopInfo other = _stops.Count == 2 ? OtherStop(current) : null;
+    return "DOCKED\n" + current.Name + (other != null ? "\n\nNext: " + other.Name : "");
 }
 
 private enum Mode { Idle, Cruise, Goto }

@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<MyObjectBuilder_ModInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>Track Cart Controller</Name>
+  <Description>An ingame script that drives a track-guided wheeled cart between captured stops: holds a steady speed up and down grades, decelerates and docks itself, and runs the shuttle route from a single command.</Description>
+  <Thumbnail>thumb.png</Thumbnail>
+
+  <Author>TonyPlays</Author>
+  <SteamIDOwner>0</SteamIDOwner>
+
+  <WorkshopId>0</WorkshopId>
+
+  <WorkshopIds>
+    <WorkshopId>
+      <Id>0</Id>
+      <ServiceName>Steam</ServiceName>
+    </WorkshopId>
+  </WorkshopIds>
+
+  <!-- These help with visibility and compatibility -->
+  <Tags>
+    <string>Ingame Script</string>
+    <string>Automation</string>
+    <string>Utility</string>
+  </Tags>
+
+  <ModDependencies />
+</MyObjectBuilder_ModInfo>

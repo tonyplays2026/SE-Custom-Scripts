@@ -8,6 +8,7 @@ A Programmable Block script that holds a steady speed for a track-guided wheeled
 [*]A sign-independent emergency brake triggers if total speed ever exceeds MaxSpeed — so a misconfiguration fails safe instead of running away.
 [*]Only the drive wheels you designate are controlled; alignment/guide wheels are left untouched. Left/right sides are detected automatically and driven with opposite signs (Space Engineers applies wheel overrides raw, so mirrored wheels need opposite values).
 [*]Stops are captured positions along the track. Driving to a stop uses a distance-based deceleration profile: cruise, then slow smoothly, crawl, and lock the connector.
+[*]The Programmable Block's screen shows a concise status: DOCKED / EN ROUTE TO / IDLE with the current or destination stop.
 [/list]
 
 [h2]Setup[/h2]

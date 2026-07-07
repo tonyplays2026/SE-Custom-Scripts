@@ -40,4 +40,4 @@ Deploy on every script change: copy the repo's `<Name>/<Name>.cs` to `IngameScri
 ## Documentation & Comments
 The `.cs` file is deployed verbatim into the PB, so in-script comments consume the block's character budget. Keep in-script comments lean — non-obvious "why" only (SE quirks, safety rationale), not narrative usage docs.
 
-Each script carries a `workshop.txt` alongside it, written in **Steam BBCode**. This is the source of truth for user-facing documentation (overview, setup, commands, config reference, tuning, troubleshooting) and doubles as the Steam Workshop description. Put detailed docs there, not in the script.
+Each script carries a `Workshop.txt` alongside it, written in **Steam BBCode**. This is the source of truth for user-facing documentation (overview, setup, commands, config reference, tuning, troubleshooting) and doubles as the Steam Workshop description. Put detailed docs there, not in the script.
