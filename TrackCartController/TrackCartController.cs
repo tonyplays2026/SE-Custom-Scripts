@@ -34,10 +34,48 @@ public Program()
     Runtime.UpdateFrequency = UpdateFrequency.None;
     ParseConfig();
     Discover();
+    RestoreState();
     WriteScreen(DockedScreenText());
 }
 
-public void Save() { }
+public void Save()
+{
+    // Persist active mode + target so a mid-trip world reload can resume.
+    Storage = ((int)_mode).ToString() + "|" + (_targetStop ?? "");
+}
+
+// On world reload the script's fields reset but the wheels keep their saved
+// PropulsionOverride — a dead control loop then means a runaway cart. Resume an
+// in-progress trip; otherwise make sure the wheels are left neutral.
+private void RestoreState()
+{
+    bool resumed = false;
+    if (_setupError == null && !string.IsNullOrEmpty(Storage))
+    {
+        string[] parts = Storage.Split('|');
+        int m;
+        if (parts.Length >= 1 && int.TryParse(parts[0], out m))
+        {
+            Mode saved = (Mode)m;
+            string target = parts.Length > 1 ? parts[1] : "";
+            if (saved == Mode.Cruise)
+            {
+                _mode = Mode.Cruise;
+                Runtime.UpdateFrequency = UpdateFrequency.Update1;
+                resumed = true;
+            }
+            else if (saved == Mode.Goto && _stops.ContainsKey(target))
+            {
+                _mode = Mode.Goto;
+                _targetStop = target;
+                Runtime.UpdateFrequency = UpdateFrequency.Update1;
+                resumed = true;
+            }
+        }
+    }
+
+    if (!resumed) ApplyWheels(0.0, true); // no stale override left coasting
+}
 
 public void Main(string argument, UpdateType updateSource)
 {
@@ -203,6 +241,7 @@ private void ControlTick()
 
     if (_mode == Mode.Cruise) CruiseControl();
     else if (_mode == Mode.Goto) GotoControl();
+    else { ApplyWheels(0.0, true); Runtime.UpdateFrequency = UpdateFrequency.None; } // idle: don't coast
 }
 
 private void CruiseControl()
