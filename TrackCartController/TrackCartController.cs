@@ -9,9 +9,10 @@ double _cruiseSpeed = 10.0;               // target travel speed (m/s)
 double _maxSpeed = 15.0;                   // emergency-brake threshold, TOTAL speed (m/s)
 double _kp = 0.35;                         // proportional gain: override per m/s of error
 double _brakeOverspeed = 2.0;              // m/s above target before wheel brakes engage
-int _propulsionSign = 1;                   // global wiring flip; -1 if it drives the wrong way
+int _propulsionSign = 1;                   // global flip; -1 if the whole cart drives the wrong way
 bool _reverse = false;                     // plain-cruise travel direction chooser
-string _driveWheelGroup = "Drive Wheels";  // group of drive wheels (excludes guide wheels)
+string _leftWheelGroup = "Drive Left";     // wheels driven at +override
+string _rightWheelGroup = "Drive Right";   // wheels driven at -override
 double _crawlSpeed = 1.0;                   // min approach speed near a stop (m/s)
 double _approachDecel = 1.5;               // deceleration used for the approach profile (m/s^2)
 double _connectDistance = 2.5;             // distance to a stop at which to crawl & connect (m)
@@ -325,14 +326,14 @@ private void DriveTowards(double target, int tripDir, out double travelSpeed, ou
     ApplyWheels(command * tripDir * _propulsionSign, brake);
 }
 
-// baseOverride already folds in tripDir and the wiring flip; SideSign mirrors L/R.
+// baseOverride folds in tripDir and the global flip; Sign is the wheel's group (+ Left / - Right).
 private void ApplyWheels(double baseOverride, bool brake)
 {
     for (int i = 0; i < _wheels.Count; i++)
     {
         DriveWheel dw = _wheels[i];
         dw.Wheel.Propulsion = true;
-        dw.Wheel.PropulsionOverride = (float)(baseOverride * dw.SideSign);
+        dw.Wheel.PropulsionOverride = (float)(baseOverride * dw.Sign);
         dw.Wheel.Brake = brake;
     }
 }
@@ -374,7 +375,8 @@ private void ParseConfig()
     _brakeOverspeed = ini.Get(S, "BrakeOverspeed").ToDouble(_brakeOverspeed);
     _propulsionSign = ini.Get(S, "PropulsionSign").ToInt32(_propulsionSign) < 0 ? -1 : 1;
     _reverse = ini.Get(S, "Reverse").ToBoolean(_reverse);
-    _driveWheelGroup = ini.Get(S, "DriveWheelGroup").ToString(_driveWheelGroup);
+    _leftWheelGroup = ini.Get(S, "LeftWheelGroup").ToString(_leftWheelGroup);
+    _rightWheelGroup = ini.Get(S, "RightWheelGroup").ToString(_rightWheelGroup);
     _crawlSpeed = ini.Get(S, "CrawlSpeed").ToDouble(_crawlSpeed);
     _approachDecel = ini.Get(S, "ApproachDecel").ToDouble(_approachDecel);
     _connectDistance = ini.Get(S, "ConnectDistance").ToDouble(_connectDistance);
@@ -430,7 +432,8 @@ private void WriteConfigTemplate()
     ini.Set(S, "BrakeOverspeed", _brakeOverspeed);
     ini.Set(S, "PropulsionSign", _propulsionSign);
     ini.Set(S, "Reverse", _reverse);
-    ini.Set(S, "DriveWheelGroup", _driveWheelGroup);
+    ini.Set(S, "LeftWheelGroup", _leftWheelGroup);
+    ini.Set(S, "RightWheelGroup", _rightWheelGroup);
     ini.Set(S, "CrawlSpeed", _crawlSpeed);
     ini.Set(S, "ApproachDecel", _approachDecel);
     ini.Set(S, "ConnectDistance", _connectDistance);
@@ -440,7 +443,8 @@ private void WriteConfigTemplate()
     ini.SetComment(S, "BrakeOverspeed", "m/s above target before wheel brakes engage.");
     ini.SetComment(S, "PropulsionSign", "Global wiring flip. Set -1 if it emergency-brakes / drives the wrong way.");
     ini.SetComment(S, "Reverse", "Plain-cruise travel direction (true/false). Not used by goto.");
-    ini.SetComment(S, "DriveWheelGroup", "Block group holding ONLY the drive wheels (exclude alignment wheels).");
+    ini.SetComment(S, "LeftWheelGroup", "Group of drive wheels driven at +override (one side).");
+    ini.SetComment(S, "RightWheelGroup", "Group of drive wheels driven at -override (other side).");
     ini.SetComment(S, "CrawlSpeed", "Minimum approach speed near a stop (m/s).");
     ini.SetComment(S, "ApproachDecel", "Deceleration used to plan the approach slowdown (m/s^2).");
     ini.SetComment(S, "ConnectDistance", "Distance to the stop at which to crawl and connect (m).");
@@ -469,23 +473,24 @@ private void Discover()
     if (_controller == null && controllers.Count > 0) _controller = controllers[0];
     if (_controller == null) { _setupError = "No ship controller (remote/cockpit) found."; return; }
 
-    if (string.IsNullOrWhiteSpace(_driveWheelGroup)) { _setupError = "DriveWheelGroup is not set in Custom Data."; return; }
-    IMyBlockGroup grp = GridTerminalSystem.GetBlockGroupWithName(_driveWheelGroup);
-    if (grp == null) { _setupError = "Drive wheel group '" + _driveWheelGroup + "' not found."; return; }
-    List<IMyMotorSuspension> raw = new List<IMyMotorSuspension>();
-    grp.GetBlocksOfType(raw, w => w.IsSameConstructAs(Me)); // group can span docked grids too
-    if (raw.Count == 0) { _setupError = "Group '" + _driveWheelGroup + "' contains no wheel suspensions."; return; }
+    // Drive wheels come from two explicit groups: Left drives at +, Right at -.
+    // No geometry, no on-the-fly inference — membership decides the sign, which
+    // is robust for subgrid/bogie builds.
+    AddWheelsFromGroup(_leftWheelGroup, 1f);
+    AddWheelsFromGroup(_rightWheelGroup, -1f);
+    if (_wheels.Count == 0)
+        _setupError = "No drive wheels found. Create groups '" + _leftWheelGroup + "' and '" + _rightWheelGroup + "'.";
+}
 
-    // Side sign from position vs the controller's Right axis: left +1, right -1
-    // (mirrored wheels need opposite override signs).
-    Vector3D ctrlPos = _controller.GetPosition();
-    Vector3D right = _controller.WorldMatrix.Right;
+private void AddWheelsFromGroup(string groupName, float sign)
+{
+    if (string.IsNullOrWhiteSpace(groupName)) return;
+    IMyBlockGroup grp = GridTerminalSystem.GetBlockGroupWithName(groupName);
+    if (grp == null) return;
+    List<IMyMotorSuspension> raw = new List<IMyMotorSuspension>();
+    grp.GetBlocksOfType(raw, w => w.IsSameConstructAs(Me)); // scope to this cart
     for (int i = 0; i < raw.Count; i++)
-    {
-        double side = Vector3D.Dot(raw[i].GetPosition() - ctrlPos, right);
-        float sideSign = side < 0 ? 1f : -1f;
-        _wheels.Add(new DriveWheel(raw[i], sideSign));
-    }
+        _wheels.Add(new DriveWheel(raw[i], sign));
 }
 
 // ---- Status output ---------------------------------------------------------
@@ -504,7 +509,8 @@ private void PrintSetup()
     Echo("  ApproachDecel   = " + _approachDecel.ToString("0.0") + " m/s2");
     Echo("  ConnectDistance = " + _connectDistance.ToString("0.0") + " m");
     Echo("  PropulsionSign  = " + _propulsionSign + "   Reverse = " + _reverse);
-    Echo("  DriveWheelGroup = " + _driveWheelGroup);
+    Echo("  LeftWheelGroup  = " + _leftWheelGroup);
+    Echo("  RightWheelGroup = " + _rightWheelGroup);
     Echo("");
     if (_setupError != null)
     {
@@ -514,7 +520,7 @@ private void PrintSetup()
     {
         int left = 0, rightCount = 0;
         for (int i = 0; i < _wheels.Count; i++)
-            if (_wheels[i].SideSign > 0) left++; else rightCount++;
+            if (_wheels[i].Sign > 0) left++; else rightCount++;
         Echo("Controller : " + _controller.CustomName);
         Echo("Drive wheels: " + _wheels.Count + "  (left " + left + " / right " + rightCount + ")");
         Echo("Connectors : " + _connectors.Count);
@@ -568,16 +574,16 @@ private string DockedScreenText()
 
 private enum Mode { Idle, Cruise, Goto }
 
-// A drive wheel with its side sign (left = +1, right = -1).
+// A drive wheel with its group sign (+1 for the Left group, -1 for the Right group).
 private class DriveWheel
 {
     public IMyMotorSuspension Wheel;
-    public float SideSign;
+    public float Sign;
 
-    public DriveWheel(IMyMotorSuspension wheel, float sideSign)
+    public DriveWheel(IMyMotorSuspension wheel, float sign)
     {
         Wheel = wheel;
-        SideSign = sideSign;
+        Sign = sign;
     }
 }
 
