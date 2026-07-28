@@ -1,0 +1,12 @@
+# GIMP autosave/backup files
+*.xcf~
+.xcf-*
+
+# Windows shell noise
+Thumbs.db
+desktop.ini
+
+# Editor scratch
+*.tmp
+*.bak
+*~
