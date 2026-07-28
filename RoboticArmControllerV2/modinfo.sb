@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<MyObjectBuilder_ModInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>Robotic Arm Controller v2</Name>
+  <Description>An ingame script that drives hinges, rotors, pistons and on/off blocks through named positions and sequences. Rewritten so any block type can be added without touching the program logic. Config-compatible with Robotic Arm Controller v1.</Description>
+  <Thumbnail>thumb.png</Thumbnail>
+
+  <Author>TonyPlays</Author>
+  <SteamIDOwner>0</SteamIDOwner>
+
+  <WorkshopId>0</WorkshopId>
+
+  <WorkshopIds>
+    <WorkshopId>
+      <Id>0</Id>
+      <ServiceName>Steam</ServiceName>
+    </WorkshopId>
+  </WorkshopIds>
+
+  <!-- These help with visibility and compatibility -->
+  <Tags>
+    <string>Ingame Script</string>
+    <string>Automation</string>
+    <string>Utility</string>
+  </Tags>
+
+  <ModDependencies />
+</MyObjectBuilder_ModInfo>
