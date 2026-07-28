@@ -1,6 +1,5 @@
-// Track Cart Controller — Iteration 3: cruise, approach/dock, auto back-and-forth.
-// Holds a target speed on a track-guided wheeled cart (steering handled by the
-// track); drives up grades, brakes down grades, drives to a captured stop and
+// Holds a target speed on a rail-guided wheeled cart (steering handled by the
+// rail); drives up grades, brakes down grades, drives to a captured stop and
 // docks, and can run to the other stop automatically ('next'). Setup, commands,
 // config, tuning: see Workshop.txt.
 
@@ -252,7 +251,7 @@ private void CruiseControl()
     bool brake, emergency;
     DriveTowards(_cruiseSpeed, tripDir, out travelSpeed, out totalSpeed, out command, out brake, out emergency);
 
-    Echo("== Track Cart — CRUISING ==");
+    Echo("== Rail Cart — CRUISING ==");
     Echo("Target : " + _cruiseSpeed.ToString("0.0") + " m/s" + (_reverse ? "  (reverse)" : ""));
     Echo("Travel : " + travelSpeed.ToString("0.00") + " m/s");
     Echo("Total  : " + totalSpeed.ToString("0.00") + " m/s" + (brake ? "   [BRAKES]" : ""));
@@ -297,7 +296,7 @@ private void GotoControl()
     bool brake, emergency;
     DriveTowards(target, tripDir, out travelSpeed, out totalSpeed, out command, out brake, out emergency);
 
-    Echo("== Track Cart — GOTO " + stop.Name + " ==");
+    Echo("== Rail Cart — GOTO " + stop.Name + " ==");
     Echo("Distance: " + distance.ToString("0.0") + " m");
     Echo("Target  : " + target.ToString("0.00") + " m/s");
     Echo("Travel  : " + travelSpeed.ToString("0.00") + " m/s");
@@ -308,7 +307,7 @@ private void GotoControl()
     WriteScreen("EN ROUTE TO\n" + stop.Name + "\n" + distance.ToString("0") + " m");
 }
 
-// Shared speed controller: hold 'target' m/s in the chosen track direction.
+// Shared speed controller: hold 'target' m/s in the chosen rail direction.
 private void DriveTowards(double target, int tripDir, out double travelSpeed, out double totalSpeed, out double command, out bool brake, out bool emergency)
 {
     Vector3D v = _controller.GetShipVelocities().LinearVelocity;
@@ -497,7 +496,7 @@ private void AddWheelsFromGroup(string groupName, float sign)
 
 private void PrintSetup()
 {
-    Echo("== Track Cart Controller (Iteration 3) ==");
+    Echo("== Rail Cart Controller (Iteration 3) ==");
     Echo("Mode: " + _mode);
     Echo("");
     Echo("Config:");

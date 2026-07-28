@@ -33,7 +33,7 @@ Scripts are deployed to the in-game local script browser at:
 
 `C:\Users\cavanhorn\AppData\Roaming\SpaceEngineers\IngameScripts\local\`
 
-Each script gets a folder there whose name matches the script's repo folder name (e.g. `TrackCartController`). Inside that folder the script file must be named **`Script.cs`** — that exact name is what makes it appear in the in-game script browser.
+Each script gets a folder there whose name matches the script's repo folder name (e.g. `RailCartController`). Inside that folder the script file must be named **`Script.cs`** — that exact name is what makes it appear in the in-game script browser.
 
 Deploy on every change: copy the repo's `<Name>/<Name>.cs` to `IngameScripts\local\<Name>\Script.cs`, and alongside it the publishable companions if present — `modinfo.sb`, `Workshop.txt`, `thumb.png` (kept under their own names). The `.claude/hooks/deploy-ingame-script.py` hook does this automatically on Write/Edit of any of those files.
 
