@@ -10,8 +10,8 @@ double _kp = 0.35;                         // proportional gain: override per m/
 double _brakeOverspeed = 2.0;              // m/s above target before wheel brakes engage
 int _propulsionSign = 1;                   // global flip; -1 if the whole cart drives the wrong way
 bool _reverse = false;                     // plain-cruise travel direction chooser
-string _leftWheelGroup = "Drive Left";     // wheels driven at +override
-string _rightWheelGroup = "Drive Right";   // wheels driven at -override
+string _leftWheelGroup = "Drive Left";     // drive wheel group A
+string _rightWheelGroup = "Drive Right";   // drive wheel group B (same override sign as A)
 double _crawlSpeed = 1.0;                   // min approach speed near a stop (m/s)
 double _approachDecel = 1.5;               // deceleration used for the approach profile (m/s^2)
 double _connectDistance = 2.5;             // distance to a stop at which to crawl & connect (m)
@@ -19,6 +19,7 @@ double _connectDistance = 2.5;             // distance to a stop at which to cra
 // ---- Discovered blocks -----------------------------------------------------
 IMyShipController _controller;
 List<DriveWheel> _wheels = new List<DriveWheel>();
+int _leftCount = 0, _rightCount = 0;       // per-group tallies for the status panel
 List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
 
 // ---- Captured stops (Custom Data [Stops]) ----------------------------------
@@ -325,7 +326,7 @@ private void DriveTowards(double target, int tripDir, out double travelSpeed, ou
     ApplyWheels(command * tripDir * _propulsionSign, brake);
 }
 
-// baseOverride folds in tripDir and the global flip; Sign is the wheel's group (+ Left / - Right).
+// baseOverride folds in tripDir and the global flip; Sign is the wheel's group sign.
 private void ApplyWheels(double baseOverride, bool brake)
 {
     for (int i = 0; i < _wheels.Count; i++)
@@ -442,8 +443,8 @@ private void WriteConfigTemplate()
     ini.SetComment(S, "BrakeOverspeed", "m/s above target before wheel brakes engage.");
     ini.SetComment(S, "PropulsionSign", "Global wiring flip. Set -1 if it emergency-brakes / drives the wrong way.");
     ini.SetComment(S, "Reverse", "Plain-cruise travel direction (true/false). Not used by goto.");
-    ini.SetComment(S, "LeftWheelGroup", "Group of drive wheels driven at +override (one side).");
-    ini.SetComment(S, "RightWheelGroup", "Group of drive wheels driven at -override (other side).");
+    ini.SetComment(S, "LeftWheelGroup", "Drive wheel group (one side). Both groups drive at +override.");
+    ini.SetComment(S, "RightWheelGroup", "Drive wheel group (other side). Both groups drive at +override.");
     ini.SetComment(S, "CrawlSpeed", "Minimum approach speed near a stop (m/s).");
     ini.SetComment(S, "ApproachDecel", "Deceleration used to plan the approach slowdown (m/s^2).");
     ini.SetComment(S, "ConnectDistance", "Distance to the stop at which to crawl and connect (m).");
@@ -472,11 +473,13 @@ private void Discover()
     if (_controller == null && controllers.Count > 0) _controller = controllers[0];
     if (_controller == null) { _setupError = "No ship controller (remote/cockpit) found."; return; }
 
-    // Drive wheels come from two explicit groups: Left drives at +, Right at -.
-    // No geometry, no on-the-fly inference — membership decides the sign, which
-    // is robust for subgrid/bogie builds.
+    // Both groups drive at +override. The opposite signs existed only because SE
+    // used to require mirrored wheels to take opposite overrides; a game update
+    // fixed that. The two groups stay so existing setups keep working unchanged.
     AddWheelsFromGroup(_leftWheelGroup, 1f);
-    AddWheelsFromGroup(_rightWheelGroup, -1f);
+    _leftCount = _wheels.Count;
+    AddWheelsFromGroup(_rightWheelGroup, 1f);
+    _rightCount = _wheels.Count - _leftCount;
     if (_wheels.Count == 0)
         _setupError = "No drive wheels found. Create groups '" + _leftWheelGroup + "' and '" + _rightWheelGroup + "'.";
 }
@@ -517,11 +520,22 @@ private void PrintSetup()
     }
     else
     {
-        int left = 0, rightCount = 0;
-        for (int i = 0; i < _wheels.Count; i++)
-            if (_wheels[i].Sign > 0) left++; else rightCount++;
         Echo("Controller : " + _controller.CustomName);
-        Echo("Drive wheels: " + _wheels.Count + "  (left " + left + " / right " + rightCount + ")");
+        Echo("Drive wheels: " + _wheels.Count + "  (left " + _leftCount + " / right " + _rightCount + ")");
+
+        // Invert Propulsion was the common hand-fix for the old SE mirroring bug.
+        // Now that overrides agree across sides it drives that wheel backwards.
+        int inverted = 0;
+        for (int i = 0; i < _wheels.Count; i++)
+            if (_wheels[i].Wheel.InvertPropulsion) inverted++;
+        if (inverted > 0)
+        {
+            Echo("  !! " + inverted + " wheel(s) have Invert Propulsion ON:");
+            for (int i = 0; i < _wheels.Count; i++)
+                if (_wheels[i].Wheel.InvertPropulsion) Echo("     - " + _wheels[i].Wheel.CustomName);
+            Echo("     Clear it in the wheel's terminal (see Workshop notes).");
+        }
+
         Echo("Connectors : " + _connectors.Count);
         for (int i = 0; i < _connectors.Count; i++)
             Echo("  - " + _connectors[i].CustomName + " (" + _connectors[i].Status + ")");
@@ -573,7 +587,7 @@ private string DockedScreenText()
 
 private enum Mode { Idle, Cruise, Goto }
 
-// A drive wheel with its group sign (+1 for the Left group, -1 for the Right group).
+// A drive wheel with its group sign (+1 for both groups since the SE mirroring fix).
 private class DriveWheel
 {
     public IMyMotorSuspension Wheel;
