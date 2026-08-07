@@ -1,0 +1,105 @@
+[h1]Airlock Controller[/h1]
+Manages any number of airlocks from a single Programmable Block. Every door stays closed, and only the side matching the chamber's pressure is ever unlocked. An airlock can never be open to the interior and to space at the same time.
+
+Crucially, the script owns pressurizing and depressurizing. Buttons run the script rather than toggling the vent directly, which lets it shut and lock both doors before the pressure starts moving. A button wired straight to an air vent cannot do that.
+
+[h2]Setup[/h2]
+[list]
+[*]Create a block group per airlock, named starting with [b]Airlock[/b]. For example [b]Airlock Hangar[/b]. The rest of the name is what you'll see and command it by, here [b]Hangar[/b].
+[*]Add that chamber's [b]air vent[/b] to the group.
+[*]Add its doors to the group, with [b]Interior[/b] or [b]Exterior[/b] somewhere in each door's name.
+[*]Optionally add a small [b]LCD[/b] to the group to show that chamber's oxygen level.
+[*]Paste the script into a Programmable Block and click [b]Check Code[/b].
+[/list]
+That's the whole setup. Repeat the group for each airlock; one Programmable Block handles them all. No timers or sensors are needed.
+
+[h2]Buttons[/h2]
+Put buttons at each airlock and set each to run the [b]Programmable Block[/b] with a [b]Run[/b] action, and put the command in the argument field:
+
+[code]
+depressurize Hangar     going out
+pressurize Hangar       coming in
+toggle Hangar           one button for both
+[/code]
+
+The name is matched case-insensitively and may contain spaces. With exactly one airlock on the grid you can leave the name off entirely.
+
+Buttons wired straight to the air vent's [i]Depressurize[/i] toggle also still work. The script notices the vent being switched and runs a proper cycle around it, locking the doors first. Using arguments is cleaner, but you don't have to rewire an existing base to adopt this script.
+
+[h2]How a cycle runs[/h2]
+[list]
+[*]Both doors close and lock. The vent is [b]not[/b] touched yet.
+[*]Only once every door reports fully closed does the vent start moving air.
+[*]While the oxygen level is in between, both sides stay locked and the screen shows [i]busy[/i].
+[*]When the level reaches the target, that side unlocks.
+[/list]
+Commands sent to an airlock that is already cycling are ignored until it settles. The status screen shows [i]busy[/i] so it's clear why the button isn't responding.
+
+[h2]When a chamber can't finish[/h2]
+Sometimes a cycle physically cannot complete: your oxygen tanks are full so there is nowhere to put the air, there's no oxygen to pressurize with, or the chamber isn't airtight. Locking both doors and waiting forever would seal someone in.
+
+Instead, after [b]StallTimeout[/b] seconds with no progress, the script unlocks the side the cycle was heading toward and reports [b]STALLED[/b]. The vent is left running.
+
+This is self-correcting: opening that door does what the vent couldn't. An exterior door dumps the remaining air to space; an interior door equalizes the chamber from the base. The oxygen level reaches its target, and the airlock returns to normal on its own. Pressing the same button again retries; pressing the opposite one turns the cycle around.
+
+A chamber that isn't airtight is caught immediately rather than after the timeout, since it will never pressurize no matter how long you wait.
+
+[h2]Displays[/h2]
+[b]The Programmable Block's own screen[/b] lists every airlock:
+[code]
+=== Airlock Controller ===
+Hangar    O2  98%   INT unlocked
+North     O2   2%   EXT unlocked
+Mid       O2  47%   DEPRESSURIZING - busy
+West      O2  62%   STALLED - EXT unlocked
+Rear      [ERROR] no Exterior door in group
+[/code]
+[b]An LCD inside an airlock's group[/b] shows just that chamber's level as a single short line — [i]O2 98%[/i] — sized for a small panel beside the door. Set the font size and colour however you like; the script only writes the text.
+
+[b]A grid-wide summary LCD[/b] can be named with the [b]StatusPanel[/b] config setting to mirror the full list anywhere you want it.
+
+[h2]Configuration[/h2]
+All settings live in the Programmable Block's [b]Custom Data[/b]. Leave it empty on first run and the script writes the section for you. It is re-read every 30 seconds, so you can tune values without recompiling.
+
+[code]
+[Airlocks]
+GroupPrefix=Airlock          ; groups starting with this are airlocks
+InteriorKeyword=Interior     ; substring identifying interior doors
+ExteriorKeyword=Exterior     ; substring identifying exterior doors
+CloseDelay=1                 ; seconds a door stays open
+PressurizedLevel=0.9         ; O2 at/above this unlocks the interior
+DepressurizedLevel=0.05      ; O2 at/below this unlocks the exterior
+StallTimeout=10              ; seconds without progress before a stall
+StallEpsilon=0.01            ; O2 movement counted as progress
+RefreshInterval=30           ; seconds between grid re-scans
+SameConstructOnly=true       ; ignore connector-docked grids
+StatusPanel=                 ; optional summary LCD name
+[/code]
+
+[h2]Tuning[/h2]
+[list]
+[*][b]CloseDelay[/b]: measured from the moment a door is [i]fully[/i] open, not from when it starts moving, so 1 second is a real second of walking time. Raise it if you're hauling something bulky through.
+[*][b]PressurizedLevel[/b]: if opening the interior door briefly dips the chamber below it and the airlock re-cycles when it should sit still, lower it to around 0.8. This mostly happens on small bases with little total air.
+[*][b]DepressurizedLevel[/b]: must stay below PressurizedLevel. If it isn't, both reset to defaults and a warning appears on the script's screen.
+[*][b]StallTimeout[/b]: raise it for very large chambers that genuinely take a while. Progress is measured cumulatively, so a slow chamber won't be mistaken for a stuck one; the timeout only fires when the level truly stops moving.
+[/list]
+
+[h2]Troubleshooting[/h2]
+[list]
+[*][b]No block groups starting with "Airlock":[/b] the group name must [i]start[/i] with the prefix. "Hangar Airlock" won't match; "Airlock Hangar" will.
+[*][b]no Interior door in group:[/b] no door in that group has the keyword in its name. Rename the door, not the group.
+[*][b]door(s) match both keywords:[/b] a door name contains "Interior" and "Exterior" at once, so its side is ambiguous. Rename it.
+[*][b]door(s) match neither keyword:[/b] a door in the group has no side keyword. Rename it or take it out of the group.
+[*][b]An airlock shows [ERROR]:[/b] both its doors are closed and locked until it's fixed. A broken airlock is a sealed airlock, by design.
+[*][b]A docked ship's airlock is being ignored:[/b] that's [b]SameConstructOnly[/b] doing its job. Each grid should run its own copy of the script.
+[/list]
+
+[h2]Notes[/h2]
+[list]
+[*]Runs every 10 ticks (about 6 times a second). This is fast enough for a 1-second door delay to be accurate.
+[*]An airlock may have more than one interior or exterior door; all doors on a side lock and unlock together.
+[*]It may also have more than one air vent. All of them are commanded together, so they never fight each other over the same chamber.
+[*]Doors are only driven while [i]functional[/i] — powered and undamaged.
+[*]A locked door is switched off. It is always closed first and only powered down once shut, so a door is never frozen part-open.
+[*]Recompiling adopts each chamber's current vent setting rather than cycling everything on the grid.
+[/list]

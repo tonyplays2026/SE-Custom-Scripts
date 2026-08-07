@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<MyObjectBuilder_ModInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>Airlock Controller</Name>
+  <Description>Manages any number of airlocks. Doors stay closed and only the side matching the chamber pressure is ever unlocked. Buttons run the script to cycle a chamber, so the doors are shut before the pressure moves.</Description>
+  <Thumbnail>thumb.png</Thumbnail>
+
+  <Author>TonyPlays</Author>
+  <SteamIDOwner>0</SteamIDOwner>
+
+  <WorkshopId>0</WorkshopId>
+
+  <WorkshopIds>
+    <WorkshopId>
+      <Id>0</Id>
+      <ServiceName>Steam</ServiceName>
+    </WorkshopId>
+  </WorkshopIds>
+
+  <!-- These help with visibility and compatibility -->
+  <Tags>
+    <string>Ingame Script</string>
+    <string>Automation</string>
+    <string>Utility</string>
+  </Tags>
+
+  <ModDependencies />
+</MyObjectBuilder_ModInfo>
